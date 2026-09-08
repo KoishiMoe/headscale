@@ -1,0 +1,16 @@
+{
+  "name": "headscale",
+  "image": "mcr.microsoft.com/devcontainers/go",
+  "workspaceFolder": "/workspace/headscale",
+  "workspaceMount": "type=bind,source=${localWorkspaceFolder},target=/workspace/headscale,relabel=private",
+  "remoteUser": "vscode",
+  "updateRemoteUserUID": true,
+  "runArgs": [
+    "--userns=keep-id",
+    "--security-opt=label=type:container_runtime_t"
+  ],
+  "mounts": [
+    "type=volume,source=headscale-home,target=/home/vscode"
+  ],
+  "postCreateCommand": "sudo chown -R vscode:vscode /home/vscode"
+}
