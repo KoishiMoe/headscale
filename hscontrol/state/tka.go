@@ -305,11 +305,14 @@ func (s *State) TKAInitFinish(req *tailcfg.TKAInitFinishRequest) (change.Change,
 	}
 
 	// Once the DB transaction succeeds, update the in-memory NodeStore snapshots
+	updates := make(map[types.NodeID]UpdateNodeFunc)
 	for nodeID, sig := range req.Signatures {
-		nid := types.NodeID(nodeID)
-		s.nodeStore.UpdateNode(nid, func(n *types.Node) {
+		updates[types.NodeID(nodeID)] = func(n *types.Node) {
 			n.KeySignature = sig
-		})
+		}
+	}
+	if len(updates) > 0 {
+		s.nodeStore.UpdateNodes(updates)
 	}
 
 	return change.FullUpdate(), nil
@@ -528,10 +531,16 @@ func (s *State) TKADisable(req *tailcfg.TKADisableRequest) (change.Change, error
 	}
 
 	// Clear node signatures in NodeStore
+	updates := make(map[types.NodeID]UpdateNodeFunc)
 	for _, n := range s.ListNodes().All() {
-		s.nodeStore.UpdateNode(n.ID(), func(node *types.Node) {
-			node.KeySignature = nil
-		})
+		if len(n.KeySignature().AsSlice()) > 0 {
+			updates[n.ID()] = func(node *types.Node) {
+				node.KeySignature = nil
+			}
+		}
+	}
+	if len(updates) > 0 {
+		s.nodeStore.UpdateNodes(updates)
 	}
 
 	return change.FullUpdate(), nil
