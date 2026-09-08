@@ -1,0 +1,119 @@
+---
+name: Release Arch Linux Package
+
+on:
+  push:
+    tags:
+      - "*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build (e.g. v0.29.3)"
+        required: false
+        type: string
+
+jobs:
+  release-arch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Determine version
+        id: vars
+        run: |
+          if [ -n "${{ inputs.tag }}" ]; then
+            TAG="${{ inputs.tag }}"
+          elif [ "${{ github.ref_type }}" = "tag" ]; then
+            TAG="${{ github.ref_name }}"
+          else
+            TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          fi
+
+          # Strip leading 'v' for Arch pkgver
+          PKGVER="${TAG#v}"
+          # Arch pkgver cannot contain hyphens; replace with underscores for pre-releases
+          ARCH_PKGVER="${PKGVER//-/_}"
+
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "pkgver=${PKGVER}" >> "$GITHUB_OUTPUT"
+          echo "arch_pkgver=${ARCH_PKGVER}" >> "$GITHUB_OUTPUT"
+          echo "Building headscale for tag: ${TAG} (pkgver: ${ARCH_PKGVER})"
+
+      - name: Build Arch Linux package
+        run: |
+          mkdir -p dist
+
+          # Create source tarball matching PKGBUILD expected directory layout
+          git archive --format=tar.gz --prefix="headscale-${{ steps.vars.outputs.pkgver }}/" -o "headscale-${{ steps.vars.outputs.pkgver }}.tar.gz" HEAD
+
+          # Run build inside clean archlinux container
+          docker run --rm \
+            -v "${PWD}:/workspace" \
+            -w /workspace \
+            -e PKGVER="${{ steps.vars.outputs.pkgver }}" \
+            -e ARCH_PKGVER="${{ steps.vars.outputs.arch_pkgver }}" \
+            archlinux:latest bash -c '
+              set -euo pipefail
+
+              # Update system and install packaging tools
+              pacman -Sy --noconfirm archlinux-keyring || true
+              pacman -Syu --noconfirm --needed base-devel git go sudo pacman-contrib
+
+              # Set up non-root build user required by makepkg
+              useradd -m -G wheel builder
+              echo "%wheel ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+
+              # Prepare isolated build workspace
+              BUILD_DIR="/home/builder/pkgbuild"
+              mkdir -p "${BUILD_DIR}"
+              cp packaging/arch/PKGBUILD packaging/arch/headscale.sysusers packaging/arch/headscale.tmpfiles "${BUILD_DIR}/"
+              cp "headscale-${PKGVER}.tar.gz" "${BUILD_DIR}/"
+
+              # Update PKGBUILD with target version
+              sed -i "s/^pkgver=.*/pkgver=${ARCH_PKGVER}/" "${BUILD_DIR}/PKGBUILD"
+              sed -i "s/^pkgrel=.*/pkgrel=1/" "${BUILD_DIR}/PKGBUILD"
+
+              # Handle pre-release directory name difference if ARCH_PKGVER contains substituted hyphens
+              if [ "${ARCH_PKGVER}" != "${PKGVER}" ]; then
+                sed -i "s/\${pkgname}-\${pkgver}/\${pkgname}-${PKGVER}/g" "${BUILD_DIR}/PKGBUILD"
+              fi
+
+              chown -R builder:builder "${BUILD_DIR}"
+
+              # Update checksums for source tarball and support files, then build package
+              su - builder -c "cd ${BUILD_DIR} && updpkgsums && makepkg -fc --noconfirm"
+
+              # Copy output packages to workspace
+              cp "${BUILD_DIR}"/*.pkg.tar.zst /workspace/dist/
+              chown -R '"$(id -u):$(id -g)"' /workspace/dist
+            '
+
+          # Clean up temporary source tarball
+          rm -f "headscale-${{ steps.vars.outputs.pkgver }}.tar.gz"
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          for pkg in *.pkg.tar.zst; do
+            [ -f "$pkg" ] || continue
+            sha256sum "$pkg" > "${pkg}.sha256"
+          done
+          ls -la
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: headscale-archlinux-${{ steps.vars.outputs.pkgver }}
+          path: dist/*.pkg.tar.zst
+          if-no-files-found: error
+
+      - name: Release
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64
+        with:
+          files: dist/*.pkg.tar.zst
+          tag_name: ${{ steps.vars.outputs.tag }}
