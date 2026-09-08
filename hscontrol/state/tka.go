@@ -107,9 +107,29 @@ func (s *State) initTKA() error {
 		mem: mem,
 	}
 
-	// 1. Read existing AUMs from database
+	// 1. Read TKA state from database
+	var tkaState types.TKAState
+	err := s.db.DB.First(&tkaState).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// Fresh database with no TKA state; ensure storage is clean
+			_ = s.tkaStorage.RemoveAll()
+			return nil
+		}
+		return fmt.Errorf("loading tka state: %w", err)
+	}
+
+	s.tkaDisablementSecret = tkaState.DisablementSecret
+
+	// If TKA is not enabled, ensure storage and memory are completely clean
+	if !tkaState.Enabled {
+		_ = s.tkaStorage.RemoveAll()
+		return nil
+	}
+
+	// 2. Read existing AUMs from database for enabled TKA
 	var aumRows []types.TKAAUM
-	err := s.db.DB.Find(&aumRows).Error
+	err = s.db.DB.Find(&aumRows).Error
 	if err != nil {
 		return fmt.Errorf("loading tka aums: %w", err)
 	}
@@ -130,21 +150,7 @@ func (s *State) initTKA() error {
 		if err := mem.CommitVerifiedAUMs(aums); err != nil {
 			return fmt.Errorf("committing loaded aums: %w", err)
 		}
-	}
 
-	// 2. Read TKA state from database
-	var tkaState types.TKAState
-	err = s.db.DB.First(&tkaState).Error
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			// Fresh database with no TKA state
-			return nil
-		}
-		return fmt.Errorf("loading tka state: %w", err)
-	}
-
-	s.tkaDisablementSecret = tkaState.DisablementSecret
-	if tkaState.Enabled && len(aumRows) > 0 {
 		auth, err := tka.Open(s.tkaStorage)
 		if err != nil {
 			return fmt.Errorf("opening tka authority: %w", err)
@@ -197,6 +203,13 @@ func (s *State) TKAInitBegin(req *tailcfg.TKAInitBeginRequest) (*tailcfg.TKAInit
 		return nil, errors.New("tailnet lock is already initialized")
 	}
 
+	// Clear any leftover AUMs in storage before initializing a new TKA
+	if err := s.tkaStorage.RemoveAll(); err != nil {
+		return nil, fmt.Errorf("clearing existing tka storage: %w", err)
+	}
+	s.tkaAuthority = nil
+	s.tkaGenesisAUM = nil
+
 	var aum tka.AUM
 	if err := aum.Unserialize(req.GenesisAUM); err != nil {
 		return nil, fmt.Errorf("invalid genesis AUM: %w", err)
@@ -231,6 +244,13 @@ func (s *State) TKAInitFinish(req *tailcfg.TKAInitFinishRequest) (change.Change,
 		return change.Change{}, errors.New("no pending genesis AUM; call init/begin first")
 	}
 
+	// Ensure storage heads are empty before bootstrapping new authority
+	if heads, err := s.tkaStorage.Heads(); err == nil && len(heads) > 0 {
+		if err := s.tkaStorage.RemoveAll(); err != nil {
+			return change.Change{}, fmt.Errorf("clearing tka storage before bootstrap: %w", err)
+		}
+	}
+
 	auth, err := tka.Bootstrap(s.tkaStorage, *s.pendingGenesisAUM)
 	if err != nil {
 		return change.Change{}, fmt.Errorf("bootstrapping tka authority: %w", err)
@@ -240,6 +260,7 @@ func (s *State) TKAInitFinish(req *tailcfg.TKAInitFinishRequest) (change.Change,
 	s.tkaGenesisAUM = s.pendingGenesisAUM
 	s.pendingGenesisAUM = nil
 	s.tkaEnabled = true
+	s.tkaDisablementSecret = req.SupportDisablement
 
 	headText, _ := auth.Head().MarshalText()
 
@@ -469,8 +490,23 @@ func (s *State) TKADisable(req *tailcfg.TKADisableRequest) (change.Change, error
 
 	s.tkaEnabled = false
 	s.tkaDisablementSecret = req.DisablementSecret
+	s.tkaAuthority = nil
+	s.tkaGenesisAUM = nil
+	s.pendingGenesisAUM = nil
+
+	// Permanently clear stored AUMs in memory and database
+	if err := s.tkaStorage.RemoveAll(); err != nil {
+		return change.Change{}, fmt.Errorf("clearing tka storage: %w", err)
+	}
 
 	_, err := hsdb.Write(s.db.DB, func(tx *gorm.DB) (any, error) {
+		// Clear node signatures from previous authority
+		if err := tx.Model(&types.Node{}).
+			Where("key_signature IS NOT NULL").
+			Update("key_signature", nil).Error; err != nil {
+			return nil, fmt.Errorf("clearing node signatures: %w", err)
+		}
+
 		var stateRow types.TKAState
 		if err := tx.First(&stateRow).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -483,6 +519,7 @@ func (s *State) TKADisable(req *tailcfg.TKADisableRequest) (change.Change, error
 			return nil, err
 		}
 		stateRow.Enabled = false
+		stateRow.Head = ""
 		stateRow.DisablementSecret = req.DisablementSecret
 		return nil, tx.Save(&stateRow).Error
 	})
@@ -490,7 +527,14 @@ func (s *State) TKADisable(req *tailcfg.TKADisableRequest) (change.Change, error
 		return change.Change{}, fmt.Errorf("saving disabled tka state in db: %w", err)
 	}
 
-	return change.TKAOnly(), nil
+	// Clear node signatures in NodeStore
+	for _, n := range s.ListNodes().All() {
+		s.nodeStore.UpdateNode(n.ID(), func(node *types.Node) {
+			node.KeySignature = nil
+		})
+	}
+
+	return change.FullUpdate(), nil
 }
 
 // TKAAffectedSigs queries all node signatures created with the specified keyID.

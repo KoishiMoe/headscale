@@ -163,12 +163,17 @@ func TestTKALifecycle(t *testing.T) {
 		DisablementSecret: disablementSecret,
 	})
 	require.NoError(t, err)
-	assert.False(t, disableChange.IsFull())
+	assert.True(t, disableChange.IsFull())
 
 	assert.False(t, s2.TKAEnabled())
 	disabledInfo := s2.TKAInfo()
 	require.NotNil(t, disabledInfo)
 	assert.True(t, disabledInfo.Disabled)
+
+	// Verify node signatures are cleared in store
+	nCleared, ok := s2.GetNodeByID(nodeID)
+	require.True(t, ok)
+	assert.Empty(t, nCleared.KeySignature().AsSlice())
 
 	// 10. Test disablement persistence across restart
 	require.NoError(t, s2.Close())
@@ -177,6 +182,48 @@ func TestTKALifecycle(t *testing.T) {
 	disabledInfo3 := s3.TKAInfo()
 	require.NotNil(t, disabledInfo3)
 	assert.True(t, disabledInfo3.Disabled)
+
+	// 11. Test Re-initialization after disablement
+	tKeyReinit, privKeyReinit, signerReinit := makeTestTLK(t)
+	disablementSecret2 := make([]byte, 32)
+	_, err = rand.Read(disablementSecret2)
+	require.NoError(t, err)
+
+	stateReinit := tka.State{
+		Keys:              []tka.Key{tKeyReinit},
+		DisablementValues: [][]byte{tka.DisablementKDF(disablementSecret2)},
+	}
+	storageReinit := tka.ChonkMem()
+	_, genesisAUM2, err := tka.Create(storageReinit, stateReinit, signerReinit)
+	require.NoError(t, err)
+
+	beginResp2, err := s3.TKAInitBegin(&tailcfg.TKAInitBeginRequest{
+		GenesisAUM: genesisAUM2.Serialize(),
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, beginResp2.NeedSignatures)
+
+	nodeKeyReinit := beginResp2.NeedSignatures[0].NodePublic
+	reinitSig := signNodeKey(t, nodeKeyReinit, tKeyReinit, privKeyReinit)
+
+	reinitChange, err := s3.TKAInitFinish(&tailcfg.TKAInitFinishRequest{
+		Signatures: map[tailcfg.NodeID]tkatype.MarshaledSignature{
+			tailcfg.NodeID(nodeID): reinitSig,
+		},
+		SupportDisablement: disablementSecret2,
+	})
+	require.NoError(t, err)
+	assert.True(t, reinitChange.IsFull())
+
+	assert.True(t, s3.TKAEnabled())
+	reinitInfo := s3.TKAInfo()
+	require.NotNil(t, reinitInfo)
+	assert.NotEmpty(t, reinitInfo.Head)
+	assert.False(t, reinitInfo.Disabled)
+
+	nReinit, ok := s3.GetNodeByID(nodeID)
+	require.True(t, ok)
+	assert.Equal(t, []byte(reinitSig), []byte(nReinit.KeySignature().AsSlice()))
 }
 
 func TestTKAValidationErrors(t *testing.T) {
