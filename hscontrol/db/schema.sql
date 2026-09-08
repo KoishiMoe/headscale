@@ -121,6 +121,8 @@ CREATE TABLE nodes(
   last_seen datetime,
   expiry datetime,
   approved_routes text,
+  key_signature blob,
+  nl_key text,
 
   created_at datetime,
   updated_at datetime,
@@ -139,6 +141,24 @@ CREATE TABLE policies(
   deleted_at datetime
 );
 CREATE INDEX idx_policies_deleted_at ON policies(deleted_at);
+
+CREATE TABLE tka_states(
+  id integer PRIMARY KEY AUTOINCREMENT,
+  enabled numeric DEFAULT false,
+  head text,
+  disablement_secret blob,
+  created_at datetime,
+  updated_at datetime
+);
+
+CREATE TABLE tka_aums(
+  hash text,
+  parent_hash text,
+  data blob,
+  created_at datetime,
+  PRIMARY KEY(hash)
+);
+CREATE INDEX idx_tka_aums_parent_hash ON tka_aums(parent_hash);
 
 CREATE TABLE database_versions(
   id integer PRIMARY KEY,

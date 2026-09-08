@@ -37,7 +37,9 @@ import (
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 	"tailscale.com/tailcfg"
+	"tailscale.com/tka"
 	"tailscale.com/types/key"
+	"tailscale.com/types/tkatype"
 	"tailscale.com/types/views"
 	"tailscale.com/util/dnsname"
 )
@@ -107,6 +109,8 @@ var nodeUpdateColumns = []string{
 	"Expiry",
 	"LastSeen",
 	"ApprovedRoutes",
+	"KeySignature",
+	"NLKey",
 	"UpdatedAt",
 }
 
@@ -194,6 +198,15 @@ type State struct {
 	// ponytail: entries are never pruned; bounded by distinct machine keys
 	// seen, add cleanup on node delete only if it ever matters.
 	registerLocks *xsync.Map[key.MachinePublic, *sync.Mutex]
+
+	// Tailnet lock (TKA) state
+	tkaMu                sync.RWMutex
+	tkaStorage           tka.CompactableChonk
+	tkaAuthority         *tka.Authority
+	tkaGenesisAUM        *tka.AUM
+	pendingGenesisAUM    *tka.AUM
+	tkaEnabled           bool
+	tkaDisablementSecret []byte
 }
 
 // lockRegistration serialises registration for a single machine key and
@@ -295,6 +308,11 @@ func NewState(cfg *types.Config) (*State, error) {
 	// invalid given name from a legacy row) so an operator can fix them. This
 	// only logs; it never mutates a node's stored name at boot.
 	s.logNodeHealth()
+
+	err = s.initTKA()
+	if err != nil {
+		return nil, fmt.Errorf("initializing tailnet lock: %w", err)
+	}
 
 	return s, nil
 }
@@ -1677,6 +1695,9 @@ type newNodeParams struct {
 	Expiry         *time.Time
 	RegisterMethod string
 
+	KeySignature tkatype.MarshaledSignature
+	NLKey        key.NLPublic
+
 	// Optional: Pre-auth key specific fields
 	PreAuthKey *types.PreAuthKey
 
@@ -1787,6 +1808,13 @@ func (s *State) applyAuthNodeUpdate(params authNodeUpdateParams) (types.NodeView
 		// MapRequest restores the live set.
 		if len(regData.Endpoints) > 0 {
 			node.Endpoints = regData.Endpoints
+		}
+
+		if len(regData.KeySignature) > 0 {
+			node.KeySignature = regData.KeySignature
+		}
+		if !regData.NLKey.IsZero() {
+			node.NLKey = regData.NLKey
 		}
 		// Do NOT reset IsOnline here. Online status is managed exclusively by
 		// [State.Connect]/[State.Disconnect] in the poll session lifecycle.
@@ -1945,6 +1973,8 @@ func (s *State) createAndSaveNewNode(params newNodeParams) (types.NodeView, erro
 		IsOnline:       new(false), // Explicitly offline until [State.Connect] is called
 		RegisterMethod: params.RegisterMethod,
 		Expiry:         params.Expiry,
+		KeySignature:   params.KeySignature,
+		NLKey:          params.NLKey,
 	}
 
 	// Assign ownership based on PreAuthKey
@@ -2634,6 +2664,12 @@ func (s *State) HandleNodeFromPreAuthKey(
 		updatedNodeView, ok := s.nodeStore.UpdateNode(existingNodeSameUser.ID(), func(node *types.Node) {
 			node.NodeKey = regReq.NodeKey
 			node.Hostname = hostname
+			if len(regReq.NodeKeySignature) > 0 {
+				node.KeySignature = regReq.NodeKeySignature
+			}
+			if !regReq.NLKey.IsZero() {
+				node.NLKey = regReq.NLKey
+			}
 
 			// TODO(kradalby): We should ensure we use the same hostinfo and node merge semantics
 			// when a node re-registers as we do when it sends a map request (UpdateNodeFromMapRequest).
@@ -2836,6 +2872,8 @@ func (s *State) HandleNodeFromPreAuthKey(
 			Endpoints:              nil, // Endpoints not available in RegisterRequest
 			Expiry:                 reqExpiry,
 			RegisterMethod:         util.RegisterMethodAuthKey,
+			KeySignature:           regReq.NodeKeySignature,
+			NLKey:                  regReq.NLKey,
 			PreAuthKey:             pak,
 			ExistingNodeForNetinfo: differentUserNode,
 		})
