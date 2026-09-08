@@ -927,6 +927,60 @@ WHERE tags IS NOT NULL AND tags != '[]' AND tags != '' AND tags != 'null'
 				},
 				Rollback: func(db *gorm.DB) error { return nil },
 			},
+			{
+				ID: "202609081300-add-tailnet-lock-support",
+				Migrate: func(tx *gorm.DB) error {
+					if tx.Name() != "sqlite" {
+						return tx.AutoMigrate(&types.Node{}, &types.TKAState{}, &types.TKAAUM{})
+					}
+
+					if !tx.Migrator().HasColumn(&types.Node{}, "key_signature") {
+						if err := tx.Exec("ALTER TABLE nodes ADD COLUMN key_signature blob").Error; err != nil {
+							return fmt.Errorf("adding key_signature column to nodes: %w", err)
+						}
+					}
+					if !tx.Migrator().HasColumn(&types.Node{}, "nl_key") {
+						if err := tx.Exec("ALTER TABLE nodes ADD COLUMN nl_key text").Error; err != nil {
+							return fmt.Errorf("adding nl_key column to nodes: %w", err)
+						}
+					}
+
+					if !tx.Migrator().HasTable(&types.TKAState{}) {
+						err := tx.Exec(`CREATE TABLE tka_states(
+  id integer PRIMARY KEY AUTOINCREMENT,
+  enabled numeric DEFAULT false,
+  head text,
+  disablement_secret blob,
+  created_at datetime,
+  updated_at datetime
+)`).Error
+						if err != nil {
+							return fmt.Errorf("creating tka_states table: %w", err)
+						}
+					}
+
+					if !tx.Migrator().HasTable(&types.TKAAUM{}) {
+						err := tx.Exec(`CREATE TABLE tka_aums(
+  hash text,
+  parent_hash text,
+  data blob,
+  created_at datetime,
+  PRIMARY KEY(hash)
+)`).Error
+						if err != nil {
+							return fmt.Errorf("creating tka_aums table: %w", err)
+						}
+
+						err = tx.Exec(`CREATE INDEX idx_tka_aums_parent_hash ON tka_aums(parent_hash)`).Error
+						if err != nil {
+							return fmt.Errorf("creating tka_aums index: %w", err)
+						}
+					}
+
+					return nil
+				},
+				Rollback: func(db *gorm.DB) error { return nil },
+			},
 		},
 	)
 
@@ -940,6 +994,8 @@ WHERE tags IS NOT NULL AND tags != '[]' AND tags != '' AND tags != 'null'
 			&types.Policy{},
 			&types.OAuthClient{},
 			&types.OAuthAccessToken{},
+			&types.TKAState{},
+			&types.TKAAUM{},
 		)
 		if err != nil {
 			return err
@@ -957,6 +1013,7 @@ WHERE tags IS NOT NULL AND tags != '[]' AND tags != '' AND tags != 'null'
 			`DROP INDEX IF EXISTS "idx_pre_auth_keys_prefix"`,
 			`DROP INDEX IF EXISTS "idx_oauth_clients_client_id"`,
 			`DROP INDEX IF EXISTS "idx_oauth_access_tokens_prefix"`,
+			`DROP INDEX IF EXISTS "idx_tka_aums_parent_hash"`,
 		}
 
 		for _, dropSQL := range dropIndexes {
@@ -977,6 +1034,7 @@ WHERE tags IS NOT NULL AND tags != '[]' AND tags != '' AND tags != 'null'
 			`CREATE UNIQUE INDEX idx_pre_auth_keys_prefix ON pre_auth_keys(prefix) WHERE prefix IS NOT NULL AND prefix != ''`,
 			`CREATE UNIQUE INDEX idx_oauth_clients_client_id ON oauth_clients(client_id)`,
 			`CREATE UNIQUE INDEX idx_oauth_access_tokens_prefix ON oauth_access_tokens(prefix)`,
+			`CREATE INDEX idx_tka_aums_parent_hash ON tka_aums(parent_hash)`,
 		}
 
 		for _, indexSQL := range indexes {

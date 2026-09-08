@@ -129,6 +129,12 @@ func (b *MapResponseBuilder) WithDomain() *MapResponseBuilder {
 	return b
 }
 
+// WithTKAInfo adds TKA configuration.
+func (b *MapResponseBuilder) WithTKAInfo() *MapResponseBuilder {
+	b.resp.TKAInfo = b.mapper.state.TKAInfo()
+	return b
+}
+
 // WithCollectServicesDisabled sets the collect services flag to false.
 func (b *MapResponseBuilder) WithCollectServicesDisabled() *MapResponseBuilder {
 	b.resp.CollectServices.Set(false)

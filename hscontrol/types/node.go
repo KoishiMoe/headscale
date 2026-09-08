@@ -19,6 +19,7 @@ import (
 	"tailscale.com/tailcfg"
 	"tailscale.com/tailcfg/nodecap"
 	"tailscale.com/types/key"
+	"tailscale.com/types/tkatype"
 	"tailscale.com/types/views"
 	"tailscale.com/util/dnsname"
 )
@@ -176,6 +177,12 @@ type Node struct {
 	// announces at the moment.
 	// See [Node.Hostinfo]
 	ApprovedRoutes Prefixes `gorm:"column:approved_routes;serializer:json"`
+
+	// KeySignature is the node's WireGuard key signature in the tailnet lock authority.
+	KeySignature tkatype.MarshaledSignature `gorm:"column:key_signature"`
+
+	// NLKey is the node's Tailnet Lock public key.
+	NLKey key.NLPublic `gorm:"column:nl_key;serializer:text"`
 
 	CreatedAt time.Time
 	UpdatedAt time.Time
@@ -1213,8 +1220,9 @@ func (nv NodeView) TailNode(
 	// what Tailscale SaaS emits for a default tailnet.
 	// cfg.Taildrop.Enabled gates CapabilityFileSharing.
 	capMap := tailcfg.NodeCapMap{
-		nodecap.Admin: []tailcfg.RawMessage{},
-		nodecap.SSH:   []tailcfg.RawMessage{},
+		nodecap.Admin:       []tailcfg.RawMessage{},
+		nodecap.SSH:         []tailcfg.RawMessage{},
+		nodecap.TailnetLock: []tailcfg.RawMessage{},
 	}
 
 	if cfg.Taildrop.Enabled {
@@ -1247,8 +1255,9 @@ func (nv NodeView) TailNode(
 
 		User: nv.TailscaleUserID(),
 
-		Key:       nv.NodeKey(),
-		KeyExpiry: keyExpiry.UTC(),
+		Key:          nv.NodeKey(),
+		KeyExpiry:    keyExpiry.UTC(),
+		KeySignature: nv.KeySignature().AsSlice(),
 
 		Machine:       nv.MachineKey(),
 		DiscoKey:      nv.DiscoKey(),
