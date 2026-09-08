@@ -169,6 +169,17 @@ func (h *Headscale) NoiseUpgradeHandler(
 		r.Post("/register", ns.RegistrationHandler)
 		r.Post("/map", ns.PollNetMapHandler)
 
+		r.Route("/tka", func(r chi.Router) {
+			r.HandleFunc("/init/begin", ns.TKAInitBeginHandler)
+			r.HandleFunc("/init/finish", ns.TKAInitFinishHandler)
+			r.HandleFunc("/bootstrap", ns.TKABootstrapHandler)
+			r.HandleFunc("/sync/offer", ns.TKASyncOfferHandler)
+			r.HandleFunc("/sync/send", ns.TKASyncSendHandler)
+			r.HandleFunc("/sign", ns.TKASignHandler)
+			r.HandleFunc("/disable", ns.TKADisableHandler)
+			r.HandleFunc("/affected-sigs", ns.TKAAffectedSigsHandler)
+		})
+
 		// SSH Check mode endpoint, consulted to validate if a given SSH connection should be accepted or rejected.
 		r.Get("/ssh/action/{src_node_id}/to/{dst_node_id}", ns.SSHActionHandler)
 
@@ -797,4 +808,158 @@ func (ns *noiseServer) getAndValidateNode(mapRequest tailcfg.MapRequest) (types.
 	}
 
 	return nv, nil
+}
+
+func (ns *noiseServer) TKAInitBeginHandler(writer http.ResponseWriter, req *http.Request) {
+	var body tailcfg.TKAInitBeginRequest
+	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+		http.Error(writer, fmt.Sprintf("Decode: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	resp, err := ns.headscale.state.TKAInitBegin(&body)
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+	writer.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(writer).Encode(resp)
+}
+
+func (ns *noiseServer) TKAInitFinishHandler(writer http.ResponseWriter, req *http.Request) {
+	var body tailcfg.TKAInitFinishRequest
+	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+		http.Error(writer, fmt.Sprintf("Decode: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	c, err := ns.headscale.state.TKAInitFinish(&body)
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	ns.headscale.Change(c)
+
+	writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+	writer.WriteHeader(http.StatusOK)
+	_, _ = writer.Write([]byte("{}"))
+}
+
+func (ns *noiseServer) TKABootstrapHandler(writer http.ResponseWriter, req *http.Request) {
+	var body tailcfg.TKABootstrapRequest
+	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+		http.Error(writer, fmt.Sprintf("Decode: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	resp, err := ns.headscale.state.TKABootstrap()
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+	writer.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(writer).Encode(resp)
+}
+
+func (ns *noiseServer) TKASyncOfferHandler(writer http.ResponseWriter, req *http.Request) {
+	var body tailcfg.TKASyncOfferRequest
+	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+		http.Error(writer, fmt.Sprintf("Decode: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	resp, err := ns.headscale.state.TKASyncOffer(&body)
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+	writer.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(writer).Encode(resp)
+}
+
+func (ns *noiseServer) TKASyncSendHandler(writer http.ResponseWriter, req *http.Request) {
+	var body tailcfg.TKASyncSendRequest
+	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+		http.Error(writer, fmt.Sprintf("Decode: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	resp, c, err := ns.headscale.state.TKASyncSend(&body)
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if !c.IsEmpty() {
+		ns.headscale.Change(c)
+	}
+
+	writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+	writer.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(writer).Encode(resp)
+}
+
+func (ns *noiseServer) TKASignHandler(writer http.ResponseWriter, req *http.Request) {
+	var body tailcfg.TKASubmitSignatureRequest
+	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+		http.Error(writer, fmt.Sprintf("Decode: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	c, err := ns.headscale.state.TKASign(&body)
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	ns.headscale.Change(c)
+
+	writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+	writer.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(writer).Encode(tailcfg.TKASubmitSignatureResponse{})
+}
+
+func (ns *noiseServer) TKADisableHandler(writer http.ResponseWriter, req *http.Request) {
+	var body tailcfg.TKADisableRequest
+	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+		http.Error(writer, fmt.Sprintf("Decode: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	c, err := ns.headscale.state.TKADisable(&body)
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	ns.headscale.Change(c)
+
+	writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+	writer.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(writer).Encode(tailcfg.TKADisableResponse{})
+}
+
+func (ns *noiseServer) TKAAffectedSigsHandler(writer http.ResponseWriter, req *http.Request) {
+	var body tailcfg.TKASignaturesUsingKeyRequest
+	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+		http.Error(writer, fmt.Sprintf("Decode: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	resp, err := ns.headscale.state.TKAAffectedSigs(&body)
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+	writer.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(writer).Encode(resp)
 }

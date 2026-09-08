@@ -17,6 +17,7 @@ import (
 	"gorm.io/gorm"
 	"tailscale.com/tailcfg"
 	"tailscale.com/types/key"
+	"tailscale.com/types/tkatype"
 	"tailscale.com/types/views"
 )
 
@@ -252,6 +253,14 @@ func (v NodeView) LastSeen() views.ValuePointer[time.Time] {
 func (v NodeView) ApprovedRoutes() views.Slice[netip.Prefix] {
 	return views.SliceOf(v.ж.ApprovedRoutes)
 }
+
+// KeySignature is the node's WireGuard key signature in the tailnet lock authority.
+func (v NodeView) KeySignature() views.ByteSlice[tkatype.MarshaledSignature] {
+	return views.ByteSliceOf(v.ж.KeySignature)
+}
+
+// NLKey is the node's Tailnet Lock public key.
+func (v NodeView) NLKey() key.NLPublic  { return v.ж.NLKey }
 func (v NodeView) CreatedAt() time.Time { return v.ж.CreatedAt }
 func (v NodeView) UpdatedAt() time.Time { return v.ж.UpdatedAt }
 func (v NodeView) DeletedAt() views.ValuePointer[time.Time] {
@@ -303,6 +312,8 @@ var _NodeViewNeedsRegeneration = Node(struct {
 	Expiry         *time.Time
 	LastSeen       *time.Time
 	ApprovedRoutes Prefixes
+	KeySignature   tkatype.MarshaledSignature
+	NLKey          key.NLPublic
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 	DeletedAt      *time.Time

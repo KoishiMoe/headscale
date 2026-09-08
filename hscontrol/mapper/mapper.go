@@ -280,6 +280,7 @@ func (m *mapper) fullMapResponse(
 		WithDNSConfig().
 		WithUserProfiles(peers).
 		WithPacketFilters().
+		WithTKAInfo().
 		WithPeers(peers).
 		Build()
 }
@@ -403,6 +404,10 @@ func (m *mapper) buildFromChange(
 	if resp.IncludePolicy {
 		builder.WithPacketFilters()
 		builder.WithSSHPolicy()
+	}
+
+	if resp.IncludeTKA || resp.SendAllPeers {
+		builder.WithTKAInfo()
 	}
 
 	if resp.SendAllPeers {

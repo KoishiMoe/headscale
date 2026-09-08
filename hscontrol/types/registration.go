@@ -6,6 +6,7 @@ import (
 
 	"tailscale.com/tailcfg"
 	"tailscale.com/types/key"
+	"tailscale.com/types/tkatype"
 )
 
 // RegistrationData is the payload cached for a pending node registration.
@@ -52,4 +53,10 @@ type RegistrationData struct {
 	// Expiry is the optional client-requested expiry for this node.
 	// May be nil if the client did not request a specific expiry.
 	Expiry *time.Time
+
+	// KeySignature is the node's WireGuard key signature in the tailnet lock authority.
+	KeySignature tkatype.MarshaledSignature
+
+	// NLKey is the node's Tailnet Lock public key.
+	NLKey key.NLPublic
 }
