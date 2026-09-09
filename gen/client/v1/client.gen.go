@@ -306,6 +306,7 @@ type SetTagsRequestBody struct {
 
 // TKALockStatus defines model for TKALockStatus.
 type TKALockStatus struct {
+	ConfigEnabled               bool             `json:"configEnabled"`
 	DisablementSecretConfigured bool             `json:"disablementSecretConfigured"`
 	Enabled                     bool             `json:"enabled"`
 	Head                        *string          `json:"head,omitempty"`

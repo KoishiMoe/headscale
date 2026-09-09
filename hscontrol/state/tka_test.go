@@ -57,6 +57,21 @@ func signNodeKey(t *testing.T, nodeKey key.NodePublic, tKey tka.Key, priv ed2551
 	return nks.Serialize()
 }
 
+func persistTestReopenTKA(t *testing.T, dbPath string, lockEnabled bool) (*State, error) {
+	t.Helper()
+
+	cfg := persistTestConfig(dbPath)
+	cfg.TailnetLock.Enabled = lockEnabled
+
+	s, err := NewState(cfg)
+	if err != nil {
+		return nil, err
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	return s, nil
+}
+
 func TestTKALifecycle(t *testing.T) {
 	dbPath, s, nodeID := persistTestSetup(t)
 
@@ -78,7 +93,17 @@ func TestTKALifecycle(t *testing.T) {
 	_, genesisAUM, err := tka.Create(storage, state, signer)
 	require.NoError(t, err)
 
-	// 3. TKAInitBegin
+	// 2b. Verify TKAInitBegin is rejected when tailnet_lock.enabled is false in configuration
+	_, err = s.TKAInitBegin(&tailcfg.TKAInitBeginRequest{
+		GenesisAUM: genesisAUM.Serialize(),
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "tailnet lock is not enabled in server configuration")
+
+	// Enable tailnet_lock in configuration
+	s.cfg.TailnetLock.Enabled = true
+
+	// 3. TKAInitBegin succeeds once enabled in configuration
 	beginResp, err := s.TKAInitBegin(&tailcfg.TKAInitBeginRequest{
 		GenesisAUM: genesisAUM.Serialize(),
 	})
@@ -110,11 +135,17 @@ func TestTKALifecycle(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, []byte(sig), []byte(n.KeySignature().AsSlice()))
 
-	// 5. Test persistence across server restart
+	// 4b. Verify that closing and reopening with tailnet_lock disabled is rejected because network is locked
 	originalHead := info.Head
 	require.NoError(t, s.Close())
 
-	s2 := persistTestReopen(t, dbPath)
+	_, err = persistTestReopenTKA(t, dbPath, false)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot disable tailnet lock in configuration: network is currently locked")
+
+	// 5. Test persistence across server restart with tailnet_lock enabled
+	s2, err := persistTestReopenTKA(t, dbPath, true)
+	require.NoError(t, err)
 	assert.True(t, s2.TKAEnabled())
 	info2 := s2.TKAInfo()
 	require.NotNil(t, info2)
@@ -175,15 +206,8 @@ func TestTKALifecycle(t *testing.T) {
 	require.True(t, ok)
 	assert.Empty(t, nCleared.KeySignature().AsSlice())
 
-	// 10. Test disablement persistence across restart
+	// 10. Test disablement persistence across restart: reopening with tailnet_lock disabled succeeds because network is unlocked
 	require.NoError(t, s2.Close())
-	s3 := persistTestReopen(t, dbPath)
-	assert.False(t, s3.TKAEnabled())
-	disabledInfo3 := s3.TKAInfo()
-	require.NotNil(t, disabledInfo3)
-	assert.True(t, disabledInfo3.Disabled)
-
-	// 11. Test Re-initialization after disablement
 	tKeyReinit, privKeyReinit, signerReinit := makeTestTLK(t)
 	disablementSecret2 := make([]byte, 32)
 	_, err = rand.Read(disablementSecret2)
@@ -196,6 +220,24 @@ func TestTKALifecycle(t *testing.T) {
 	storageReinit := tka.ChonkMem()
 	_, genesisAUM2, err := tka.Create(storageReinit, stateReinit, signerReinit)
 	require.NoError(t, err)
+
+	s3Disabled, err := persistTestReopenTKA(t, dbPath, false)
+	require.NoError(t, err)
+	assert.False(t, s3Disabled.TKAEnabled())
+	assert.Nil(t, s3Disabled.TKAInfo())
+
+	// When disabled in config, re-initialization is rejected
+	_, err = s3Disabled.TKAInitBegin(&tailcfg.TKAInitBeginRequest{GenesisAUM: genesisAUM2.Serialize()})
+	assert.ErrorContains(t, err, "tailnet lock is not enabled in server configuration")
+	require.NoError(t, s3Disabled.Close())
+
+	// 11. Test Re-initialization after disablement when enabled in config
+	s3, err := persistTestReopenTKA(t, dbPath, true)
+	require.NoError(t, err)
+	assert.False(t, s3.TKAEnabled())
+	disabledInfo3 := s3.TKAInfo()
+	require.NotNil(t, disabledInfo3)
+	assert.True(t, disabledInfo3.Disabled)
 
 	beginResp2, err := s3.TKAInitBegin(&tailcfg.TKAInitBeginRequest{
 		GenesisAUM: genesisAUM2.Serialize(),
@@ -249,6 +291,7 @@ func TestTKAValidationErrors(t *testing.T) {
 
 func TestTKASync(t *testing.T) {
 	dbPath, s, nodeID := persistTestSetup(t)
+	s.cfg.TailnetLock.Enabled = true
 
 	tKey, privKey, signer := makeTestTLK(t)
 	disablementSecret := make([]byte, 32)
@@ -322,7 +365,8 @@ func TestTKASync(t *testing.T) {
 
 	// 3. Test persistence of new Head after restart
 	require.NoError(t, s.Close())
-	s2 := persistTestReopen(t, dbPath)
+	s2, err := persistTestReopenTKA(t, dbPath, true)
+	require.NoError(t, err)
 	assert.True(t, s2.TKAEnabled())
 	assert.Equal(t, string(clientHeadText), s2.TKAInfo().Head)
 }

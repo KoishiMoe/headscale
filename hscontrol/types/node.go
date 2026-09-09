@@ -1219,10 +1219,14 @@ func (nv NodeView) TailNode(
 	// Baseline caps every node receives, regardless of policy. Mirrors
 	// what Tailscale SaaS emits for a default tailnet.
 	// cfg.Taildrop.Enabled gates CapabilityFileSharing.
+	// cfg.TailnetLock.Enabled gates CapabilityTailnetLock.
 	capMap := tailcfg.NodeCapMap{
-		nodecap.Admin:       []tailcfg.RawMessage{},
-		nodecap.SSH:         []tailcfg.RawMessage{},
-		nodecap.TailnetLock: []tailcfg.RawMessage{},
+		nodecap.Admin: []tailcfg.RawMessage{},
+		nodecap.SSH:   []tailcfg.RawMessage{},
+	}
+
+	if cfg.TailnetLock.Enabled {
+		capMap[nodecap.TailnetLock] = []tailcfg.RawMessage{}
 	}
 
 	if cfg.Taildrop.Enabled {

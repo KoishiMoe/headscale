@@ -130,6 +130,14 @@ func (s *State) initTKA() error {
 		return nil
 	}
 
+	// Safety invariant: if the tailnet is locked, turning off tailnet_lock in configuration
+	// is rejected at boot because the control server cannot unilaterally force-disable an
+	// active cryptographic lock authority. The lock must first be disabled by an authorized
+	// client using 'tailscale lock disable <secret>'.
+	if s.cfg != nil && !s.cfg.TailnetLock.Enabled {
+		return fmt.Errorf("cannot disable tailnet lock in configuration: network is currently locked. Tailnet lock must be disabled by an authorized client using 'tailscale lock disable <secret>' before setting tailnet_lock.enabled to false")
+	}
+
 	// 2. Read existing AUMs from database for enabled TKA
 	var aumRows []types.TKAAUM
 	err = s.db.DB.Find(&aumRows).Error
@@ -170,6 +178,12 @@ func (s *State) TKAInfo() *tailcfg.TKAInfo {
 	s.tkaMu.RLock()
 	defer s.tkaMu.RUnlock()
 
+	// Similar to noise.go:179, this check could be `s.cfg != nil && !s.cfg.TailnetLock.Enabled 
+	// && !s.tkaEnabled` for defense, but currently simplified to match the startup behavior
+	if s.cfg != nil && !s.cfg.TailnetLock.Enabled {
+		return nil
+	}
+
 	if s.tkaEnabled && s.tkaAuthority != nil {
 		head := s.tkaAuthority.Head()
 		headText, err := head.MarshalText()
@@ -201,6 +215,10 @@ func (s *State) TKAEnabled() bool {
 func (s *State) TKAInitBegin(req *tailcfg.TKAInitBeginRequest) (*tailcfg.TKAInitBeginResponse, error) {
 	s.tkaMu.Lock()
 	defer s.tkaMu.Unlock()
+
+	if s.cfg != nil && !s.cfg.TailnetLock.Enabled {
+		return nil, errors.New("tailnet lock is not enabled in server configuration")
+	}
 
 	if s.tkaEnabled {
 		return nil, errors.New("tailnet lock is already initialized")
@@ -637,6 +655,7 @@ func (s *State) TKALockStatus() types.TKALockStatus {
 	defer s.tkaMu.RUnlock()
 
 	status := types.TKALockStatus{
+		ConfigEnabled:               s.cfg != nil && s.cfg.TailnetLock.Enabled,
 		Enabled:                     s.tkaEnabled,
 		DisablementSecretConfigured: len(s.tkaDisablementSecret) > 0,
 		TrustedKeys:                 make([]types.TKATrustedKey, 0),
