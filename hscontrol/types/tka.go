@@ -27,3 +27,41 @@ type TKAAUM struct {
 func (TKAAUM) TableName() string {
 	return "tka_aums"
 }
+
+// TKALockStatus describes the overall Tailnet Key Authority (TKA) lock status.
+type TKALockStatus struct {
+	Enabled                     bool            `json:"enabled"`
+	Head                        string          `json:"head,omitempty"`
+	DisablementSecretConfigured bool            `json:"disablementSecretConfigured"`
+	TrustedKeys                 []TKATrustedKey `json:"trustedKeys"`
+	Summary                     TKASummary      `json:"summary"`
+}
+
+// TKATrustedKey describes a trusted signing key in the TKA.
+type TKATrustedKey struct {
+	KeyID     string            `json:"keyId"`
+	PublicKey string            `json:"publicKey"`
+	Votes     uint              `json:"votes"`
+	Kind      string            `json:"kind"`
+	Metadata  map[string]string `json:"metadata,omitempty"`
+}
+
+// TKASummary provides high-level node counts relative to tailnet lock.
+type TKASummary struct {
+	TotalNodes      int `json:"totalNodes"`
+	SignedNodes     int `json:"signedNodes"`
+	AuthorizedNodes int `json:"authorizedNodes"`
+	UnsignedNodes   int `json:"unsignedNodes"`
+}
+
+// TKANodeLockStatus describes the tailnet lock status of an individual node.
+type TKANodeLockStatus struct {
+	ID           string `json:"id"`
+	Hostname     string `json:"hostname"`
+	GivenName    string `json:"givenName"`
+	Owner        string `json:"owner"`
+	NodeKey      string `json:"nodeKey"`
+	Signed       bool   `json:"signed"`
+	Authorized   bool   `json:"authorized"`
+	SigningKeyID string `json:"signingKeyId,omitempty"`
+}
