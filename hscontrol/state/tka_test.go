@@ -119,12 +119,13 @@ func TestTKALifecycle(t *testing.T) {
 		Signatures: map[tailcfg.NodeID]tkatype.MarshaledSignature{
 			tailcfg.NodeID(nodeID): sig,
 		},
-		SupportDisablement: disablementSecret,
+		SupportDisablement: nil, // Standard client init does not send SupportDisablement
 	})
 	require.NoError(t, err)
 	assert.True(t, finishChange.IsFull())
 
 	assert.True(t, s.TKAEnabled())
+	assert.True(t, s.TKALockStatus().DisablementSecretConfigured)
 	info := s.TKAInfo()
 	require.NotNil(t, info)
 	assert.NotEmpty(t, info.Head)
@@ -150,6 +151,7 @@ func TestTKALifecycle(t *testing.T) {
 	info2 := s2.TKAInfo()
 	require.NotNil(t, info2)
 	assert.Equal(t, originalHead, info2.Head)
+	assert.True(t, s2.TKALockStatus().DisablementSecretConfigured)
 
 	n2, ok := s2.GetNodeByID(nodeID)
 	require.True(t, ok)
@@ -252,12 +254,13 @@ func TestTKALifecycle(t *testing.T) {
 		Signatures: map[tailcfg.NodeID]tkatype.MarshaledSignature{
 			tailcfg.NodeID(nodeID): reinitSig,
 		},
-		SupportDisablement: disablementSecret2,
+		SupportDisablement: nil,
 	})
 	require.NoError(t, err)
 	assert.True(t, reinitChange.IsFull())
 
 	assert.True(t, s3.TKAEnabled())
+	assert.True(t, s3.TKALockStatus().DisablementSecretConfigured)
 	reinitInfo := s3.TKAInfo()
 	require.NotNil(t, reinitInfo)
 	assert.NotEmpty(t, reinitInfo.Head)
@@ -266,6 +269,14 @@ func TestTKALifecycle(t *testing.T) {
 	nReinit, ok := s3.GetNodeByID(nodeID)
 	require.True(t, ok)
 	assert.Equal(t, []byte(reinitSig), []byte(nReinit.KeySignature().AsSlice()))
+
+	// Reopen after reinitialization to ensure DisablementSecretConfigured stays true and DB is not contaminated
+	require.NoError(t, s3.Close())
+	s4, err := persistTestReopenTKA(t, dbPath, true)
+	require.NoError(t, err)
+	assert.True(t, s4.TKAEnabled())
+	assert.True(t, s4.TKALockStatus().DisablementSecretConfigured)
+	assert.Nil(t, s4.tkaDisablementSecret)
 }
 
 func TestTKAValidationErrors(t *testing.T) {
@@ -284,9 +295,22 @@ func TestTKAValidationErrors(t *testing.T) {
 	_, err = s.TKASign(&tailcfg.TKASubmitSignatureRequest{Signature: []byte("sig")})
 	assert.Error(t, err)
 
-	// TKADisable when not enabled fails
-	_, err = s.TKADisable(&tailcfg.TKADisableRequest{DisablementSecret: []byte("secret")})
-	assert.Error(t, err)
+	// SupportDisablement is rejected to preserve zero-trust boundary
+	tKeyErr, _, signerErr := makeTestTLK(t)
+	tkaStateErr := tka.State{
+		Keys:              []tka.Key{tKeyErr},
+		DisablementValues: [][]byte{tka.DisablementKDF([]byte("secret"))},
+	}
+	_, genAUMErr, err := tka.Create(tka.ChonkMem(), tkaStateErr, signerErr)
+	require.NoError(t, err)
+	s.cfg.TailnetLock.Enabled = true
+	_, err = s.TKAInitBegin(&tailcfg.TKAInitBeginRequest{GenesisAUM: genAUMErr.Serialize()})
+	require.NoError(t, err)
+	_, err = s.TKAInitFinish(&tailcfg.TKAInitFinishRequest{
+		SupportDisablement: []byte("secret"),
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--gen-disablement-for-support is not permitted on Headscale")
 }
 
 func TestTKASync(t *testing.T) {
@@ -317,7 +341,7 @@ func TestTKASync(t *testing.T) {
 		Signatures: map[tailcfg.NodeID]tkatype.MarshaledSignature{
 			tailcfg.NodeID(nodeID): sig,
 		},
-		SupportDisablement: disablementSecret,
+		SupportDisablement: nil,
 	})
 	require.NoError(t, err)
 

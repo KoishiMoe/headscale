@@ -121,7 +121,7 @@ func TestAPIV1Lock(t *testing.T) {
 			Signatures: map[tailcfg.NodeID]tkatype.MarshaledSignature{
 				tailcfg.NodeID(node.ID): sig,
 			},
-			SupportDisablement: disablementSecret,
+			SupportDisablement: nil,
 		})
 		require.NoError(t, err)
 
