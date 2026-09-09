@@ -40,6 +40,7 @@ func TestLockCLICommands(t *testing.T) {
 	head := "test-head-hash-12345"
 	keyID := "tlpub:abcdef1234567890"
 	status := clientv1.TKALockStatus{
+		ConfigEnabled:               true,
 		Enabled:                     true,
 		Head:                        &head,
 		DisablementSecretConfigured: true,
@@ -91,10 +92,26 @@ func TestLockCLICommands(t *testing.T) {
 		res, err := client.GetTailnetLockStatusWithResponse(context.Background())
 		require.NoError(t, err)
 		require.Equal(t, http.StatusOK, res.StatusCode())
+		assert.True(t, res.JSON200.ConfigEnabled)
 		assert.True(t, res.JSON200.Enabled)
 		assert.Equal(t, head, *res.JSON200.Head)
 		assert.Equal(t, int64(2), res.JSON200.Summary.TotalNodes)
 		assert.Equal(t, int64(1), res.JSON200.Summary.SignedNodes)
+	})
+
+	t.Run("get lock status response with config disabled", func(t *testing.T) {
+		disabledStatus := status
+		disabledStatus.ConfigEnabled = false
+		disabledServer := mockLockServer(t, disabledStatus, nodes)
+		defer disabledServer.Close()
+
+		disabledClient, err := clientv1.NewClientWithResponses(disabledServer.URL)
+		require.NoError(t, err)
+
+		res, err := disabledClient.GetTailnetLockStatusWithResponse(context.Background())
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, res.StatusCode())
+		assert.False(t, res.JSON200.ConfigEnabled)
 	})
 
 	t.Run("get lock nodes response", func(t *testing.T) {

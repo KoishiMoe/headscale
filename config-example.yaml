@@ -460,6 +460,15 @@ taildrop:
 auto_update:
   enabled: false
 
+# Tailnet Lock (TKA) configuration
+# Tailnet Lock provides cryptographic verification of node keys in your tailnet.
+# When enabled, nodes can initialize and participate in a Tailnet Key Authority (TKA).
+# Note: Once tailnet lock is active in the tailnet, turning this setting off is
+# prevented at server boot until the lock is disabled via 'tailscale lock disable <secret>'.
+# https://tailscale.com/blog/tailnet-lock
+tailnet_lock:
+  enabled: false
+
 # Advanced performance tuning parameters.
 # The defaults are carefully chosen and should rarely need adjustment.
 # Only modify these if you have identified a specific performance issue.

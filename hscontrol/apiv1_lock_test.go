@@ -70,6 +70,7 @@ func TestAPIV1Lock(t *testing.T) {
 		var status types.TKALockStatus
 		err := json.Unmarshal(res.body, &status)
 		require.NoError(t, err)
+		assert.False(t, status.ConfigEnabled)
 		assert.False(t, status.Enabled)
 		assert.Equal(t, 0, status.Summary.TotalNodes)
 	})
@@ -87,6 +88,8 @@ func TestAPIV1Lock(t *testing.T) {
 	})
 
 	t.Run("lock status after tka init and node registration", func(t *testing.T) {
+		h.app.cfg.TailnetLock.Enabled = true
+
 		// Register a node first
 		user := h.app.state.CreateUserForTest("lock-user")
 		node := h.app.state.CreateRegisteredNodeForTest(user, "lock-box")
@@ -129,6 +132,7 @@ func TestAPIV1Lock(t *testing.T) {
 		var status types.TKALockStatus
 		err = json.Unmarshal(resStatus.body, &status)
 		require.NoError(t, err)
+		assert.True(t, status.ConfigEnabled)
 		assert.True(t, status.Enabled)
 		assert.NotEmpty(t, status.Head)
 		assert.True(t, status.DisablementSecretConfigured)

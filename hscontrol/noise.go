@@ -170,6 +170,19 @@ func (h *Headscale) NoiseUpgradeHandler(
 		r.Post("/map", ns.PollNetMapHandler)
 
 		r.Route("/tka", func(r chi.Router) {
+			r.Use(func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+					// Below check could be `!ns.headscale.cfg.TailnetLock.Enabled && !ns.headscale.state.TKAEnabled()` if want to be defensive
+					// (to guarantee that even if the config is disabled, when the network is locked, these endpoints remain available)
+					// But currently we have already guarded the config change at startup, inconsistent state would throw an error, so that's redundant
+					// If future change breaks this assumption, this check (and tka.go:182) MUST be updated
+					if !ns.headscale.cfg.TailnetLock.Enabled {
+						http.Error(w, "tailnet lock is not enabled on this server", http.StatusBadRequest)
+						return
+					}
+					next.ServeHTTP(w, req)
+				})
+			})
 			r.HandleFunc("/init/begin", ns.TKAInitBeginHandler)
 			r.HandleFunc("/init/finish", ns.TKAInitFinishHandler)
 			r.HandleFunc("/bootstrap", ns.TKABootstrapHandler)
