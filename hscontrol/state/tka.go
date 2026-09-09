@@ -168,6 +168,16 @@ func (s *State) initTKA() error {
 		}
 		s.tkaAuthority = auth
 		s.tkaEnabled = true
+
+		// If a disablement secret was stored in DB while TKA is enabled,
+		// verify that it is actually valid for this authority.
+		// If it is stale (e.g. from a prior disable before re-init), purge it.
+		if len(s.tkaDisablementSecret) > 0 && !s.tkaAuthority.ValidDisablement(s.tkaDisablementSecret) {
+			s.tkaDisablementSecret = nil
+			_, _ = hsdb.Write(s.db.DB, func(tx *gorm.DB) (any, error) {
+				return nil, tx.Model(&types.TKAState{}).Where("id = ?", tkaState.ID).Update("disablement_secret", nil).Error
+			})
+		}
 	}
 
 	return nil
@@ -230,6 +240,7 @@ func (s *State) TKAInitBegin(req *tailcfg.TKAInitBeginRequest) (*tailcfg.TKAInit
 	}
 	s.tkaAuthority = nil
 	s.tkaGenesisAUM = nil
+	s.tkaDisablementSecret = nil
 
 	var aum tka.AUM
 	if err := aum.Unserialize(req.GenesisAUM); err != nil {
@@ -263,6 +274,10 @@ func (s *State) TKAInitFinish(req *tailcfg.TKAInitFinishRequest) (change.Change,
 
 	if s.pendingGenesisAUM == nil {
 		return change.Change{}, errors.New("no pending genesis AUM; call init/begin first")
+	}
+
+	if len(req.SupportDisablement) > 0 {
+		return change.Change{}, errors.New("--gen-disablement-for-support is not permitted on Headscale: storing disablement secrets on the control server violates the zero-trust boundary of Tailnet Lock. Re-run 'tailscale lock init' without --gen-disablement-for-support")
 	}
 
 	// Ensure storage heads are empty before bootstrapping new authority
@@ -313,9 +328,7 @@ func (s *State) TKAInitFinish(req *tailcfg.TKAInitFinishRequest) (change.Change,
 
 		stateRow.Enabled = true
 		stateRow.Head = string(headText)
-		if len(req.SupportDisablement) > 0 {
-			stateRow.DisablementSecret = req.SupportDisablement
-		}
+		stateRow.DisablementSecret = req.SupportDisablement // In fact in current impl, req.SupportDisablement must always be empty to maintain zero trust boundary (:279-281)
 		if err := tx.Save(&stateRow).Error; err != nil {
 			return nil, fmt.Errorf("saving tka state in db: %w", err)
 		}
@@ -654,10 +667,15 @@ func (s *State) TKALockStatus() types.TKALockStatus {
 	s.tkaMu.RLock()
 	defer s.tkaMu.RUnlock()
 
+	hasDisablement := len(s.tkaDisablementSecret) > 0
+	if !hasDisablement && s.tkaEnabled && s.tkaGenesisAUM != nil && s.tkaGenesisAUM.State != nil {
+		hasDisablement = len(s.tkaGenesisAUM.State.DisablementValues) > 0
+	}
+
 	status := types.TKALockStatus{
 		ConfigEnabled:               s.cfg != nil && s.cfg.TailnetLock.Enabled,
 		Enabled:                     s.tkaEnabled,
-		DisablementSecretConfigured: len(s.tkaDisablementSecret) > 0,
+		DisablementSecretConfigured: hasDisablement,
 		TrustedKeys:                 make([]types.TKATrustedKey, 0),
 	}
 

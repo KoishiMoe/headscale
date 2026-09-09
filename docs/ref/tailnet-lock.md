@@ -139,7 +139,16 @@ When updating this fork against future upstream `juanfont/headscale` releases or
   - If `s.tkaEnabled == true` (the tailnet is locked), any runtime reload attempting to set `tailnet_lock.enabled: false` **must be rejected** with an error. The control server cannot unilaterally turn off cryptographic lock verification while clients are actively expecting signed keys.
   - Tailnet Lock must always be disabled from an authorized client node via `tailscale lock disable <secret>` before the server configuration can be toggled off.
 
-### F. Quick Smoke Test Verification
+### F. Zero-Trust Boundary: Support Disablement Secrets Prohibited
+- **Background**: Tailscale SaaS supports an optional `--gen-disablement-for-support` flag which generates a disablement secret and transmits it to Tailscale's support escalation systems so customer support can unlock a locked-out tailnet.
+- **Headscale Policy**: On self-hosted Headscale, **Headscale is the control plane**. Storing a disablement secret on the control plane breaks Tailnet Lock's fundamental zero-trust model (which assumes the control server is untrusted/compromised).
+- **Enforcement**: If a client invokes `tailscale lock init` with `--gen-disablement-for-support`, Headscale explicitly rejects the initialization request with:
+  ```text
+  --gen-disablement-for-support is not permitted on Headscale: storing disablement secrets on the control server violates the zero-trust boundary of Tailnet Lock. Re-run 'tailscale lock init' without --gen-disablement-for-support
+  ```
+- Disablement secrets must remain strictly offline with the administrator. Headscale only holds a disablement secret after an authorized administrator explicitly disables the lock via `tailscale lock disable <secret>`.
+
+### G. Quick Smoke Test Verification
 To verify the implementation after a rebase without needing Docker:
 1. Ensure `tailnet_lock.enabled: true` in `config.yaml`.
 2. Build Headscale: `go build ./cmd/headscale`
