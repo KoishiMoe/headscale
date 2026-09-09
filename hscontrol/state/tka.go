@@ -667,16 +667,16 @@ func (s *State) TKALockStatus() types.TKALockStatus {
 	s.tkaMu.RLock()
 	defer s.tkaMu.RUnlock()
 
-	hasDisablement := len(s.tkaDisablementSecret) > 0
-	if !hasDisablement && s.tkaEnabled && s.tkaGenesisAUM != nil && s.tkaGenesisAUM.State != nil {
-		hasDisablement = len(s.tkaGenesisAUM.State.DisablementValues) > 0
+	var disablementCount int
+	if s.tkaEnabled && s.tkaGenesisAUM != nil && s.tkaGenesisAUM.State != nil {
+		disablementCount = len(s.tkaGenesisAUM.State.DisablementValues)
 	}
 
 	status := types.TKALockStatus{
-		ConfigEnabled:               s.cfg != nil && s.cfg.TailnetLock.Enabled,
-		Enabled:                     s.tkaEnabled,
-		DisablementSecretConfigured: hasDisablement,
-		TrustedKeys:                 make([]types.TKATrustedKey, 0),
+		ConfigEnabled:           s.cfg != nil && s.cfg.TailnetLock.Enabled,
+		Enabled:                 s.tkaEnabled,
+		DisablementSecretsCount: disablementCount,
+		TrustedKeys:             make([]types.TKATrustedKey, 0),
 	}
 
 	if s.tkaEnabled && s.tkaAuthority != nil {
