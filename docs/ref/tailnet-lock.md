@@ -146,3 +146,116 @@ To verify the implementation after a rebase without needing Docker:
 6. Verify status transitions to `Tailnet Lock is ENABLED`.
 7. Run `tailscale --socket=/tmp/node1.sock lock disable <secret>`.
 8. Verify status transitions back to `Tailnet Lock is NOT enabled`.
+
+---
+
+## 5. Server-Side Administration CLI (`headscale lock`)
+
+While Tailnet Lock authorization is client-governed by design, Headscale provides a server-side CLI command group `headscale lock` (alias: `tailnet-lock`) for centralized monitoring and debugging.
+
+### A. Tailnet Lock Status (`headscale lock status`)
+
+Displays global tailnet lock status, current Head AUM commit hash, disablement secret availability, trusted signing keys, and node verification statistics:
+
+```bash
+headscale lock status
+# or
+headscale tailnet-lock status
+```
+
+**Example Output (Human-readable)**:
+```text
+Tailnet Lock Status
+  Status:                     Enabled
+  Head AUM Hash:              5f8d9b1c0e3a4789234b6e51c890f12456e7890a12b34c56d78e901f23456789
+  Disablement Secret:         Yes
+  Total Nodes:                4
+  Signed Nodes:               3
+  Authorized Nodes:           3
+  Unsigned Nodes:             1
+
+Trusted Signing Keys
+  #  Key ID                 Public Key (TLK)       Votes  Kind
+  1  tlpub:abc123...        tlpub:abc123...        1      25519
+```
+
+**JSON Output (`--output json`)**:
+```bash
+headscale lock status -o json
+```
+```json
+{
+	"disablementSecretConfigured": true,
+	"enabled": true,
+	"head": "5f8d9b1c0e3a4789234b6e51c890f12456e7890a12b34c56d78e901f23456789",
+	"summary": {
+		"authorizedNodes": 3,
+		"signedNodes": 3,
+		"totalNodes": 4,
+		"unsignedNodes": 1
+	},
+	"trustedKeys": [
+		{
+			"keyId": "tlpub:abc123...",
+			"kind": "25519",
+			"publicKey": "tlpub:abc123...",
+			"votes": 1
+		}
+	]
+}
+```
+
+### B. Per-Node Verification Details (`headscale lock nodes`)
+
+Lists all registered nodes along with their Tailnet Lock signature and authorization status:
+
+```bash
+headscale lock nodes
+# or
+headscale lock list
+headscale lock ls
+```
+
+**Filter Flags**:
+- `--signed`: Show only nodes with a signature present.
+- `--unsigned`: Show only nodes without a signature.
+- `--unauthorized`: Show only nodes whose signatures are not authorized under the active TKA authority.
+
+**Example Output (Human-readable)**:
+```text
+  ID  Hostname   Owner     NodeKey    Signed  Authorized  Signer Key ID
+  1   laptop     user1     [abcde]    yes     yes         tlpub:4f5a6b...
+  2   desktop    user1     [12345]    yes     yes         tlpub:4f5a6b...
+  3   server     tag:prod  [98765]    yes     yes         tlpub:4f5a6b...
+  4   tablet     user2     [76543]    no      no          -
+```
+
+**JSON Output (`--output json`)**:
+```bash
+headscale lock nodes -o json
+```
+```json
+[
+	{
+		"authorized": true,
+		"givenName": "laptop",
+		"hostname": "laptop",
+		"id": "1",
+		"nodeKey": "nodekey:abcdef0123456789...",
+		"owner": "user1",
+		"signed": true,
+		"signingKeyId": "tlpub:4f5a6b..."
+	}
+]
+```
+
+### C. Architecture & API Endpoints
+
+The CLI communicates with the Headscale daemon via the Huma v2 OpenAPI endpoints:
+- `GET /api/v1/lock`: `apiv1.getTailnetLockStatus`
+- `GET /api/v1/lock/nodes`: `apiv1.getTailnetLockNodes`
+
+The endpoints inspect `*state.State` in-memory structures without database table scans:
+- `s.tkaAuthority.Head()` and `s.tkaAuthority.Keys()` report the current cryptographic head and trusted keys.
+- `s.ListNodes()` views evaluate `s.tkaAuthority.NodeKeyAuthorized(node.NodeKey(), sig)` live against the active authority.
+- Strictly adheres to the Headscale view architecture (zero `AsStruct()` clones on read paths).

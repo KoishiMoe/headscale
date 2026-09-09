@@ -2,8 +2,11 @@ package state
 
 import (
 	"bytes"
+	"crypto/ed25519"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	hsdb "github.com/juanfont/headscale/hscontrol/db"
@@ -570,4 +573,122 @@ func (s *State) TKAAffectedSigs(req *tailcfg.TKASignaturesUsingKeyRequest) (*tai
 	return &tailcfg.TKASignaturesUsingKeyResponse{
 		Signatures: matchingSigs,
 	}, nil
+}
+
+// TKANodesLockStatus returns the tailnet lock status of all nodes.
+func (s *State) TKANodesLockStatus() []types.TKANodeLockStatus {
+	s.tkaMu.RLock()
+	auth := s.tkaAuthority
+	enabled := s.tkaEnabled
+	s.tkaMu.RUnlock()
+
+	nodes := s.ListNodes()
+	result := make([]types.TKANodeLockStatus, 0, nodes.Len())
+
+	for _, n := range nodes.All() {
+		sigBytes := n.KeySignature().AsSlice()
+		signed := len(sigBytes) > 0
+		authorized := false
+		var signingKeyID string
+
+		if signed {
+			var sig tka.NodeKeySignature
+			if err := sig.Unserialize(sigBytes); err == nil {
+				if keyID, err := sig.UnverifiedAuthorizingKeyID(); err == nil {
+					if len(keyID) == ed25519.PublicKeySize {
+						signingKeyID = key.NLPublicFromEd25519Unsafe(ed25519.PublicKey(keyID)).CLIString()
+					} else {
+						signingKeyID = hex.EncodeToString(keyID)
+					}
+				}
+			}
+			if enabled && auth != nil {
+				if err := auth.NodeKeyAuthorized(n.NodeKey(), tkatype.MarshaledSignature(sigBytes)); err == nil {
+					authorized = true
+				}
+			}
+		}
+
+		var owner string
+		if n.IsTagged() {
+			owner = strings.Join(n.Tags().AsSlice(), ", ")
+		} else if n.Owner().Valid() {
+			owner = n.Owner().Name()
+		}
+
+		result = append(result, types.TKANodeLockStatus{
+			ID:           n.StringID(),
+			Hostname:     n.Hostname(),
+			GivenName:    n.GivenName(),
+			Owner:        owner,
+			NodeKey:      n.NodeKey().String(),
+			Signed:       signed,
+			Authorized:   authorized,
+			SigningKeyID: signingKeyID,
+		})
+	}
+
+	return result
+}
+
+// TKALockStatus returns the overall tailnet lock status and key authority details.
+func (s *State) TKALockStatus() types.TKALockStatus {
+	s.tkaMu.RLock()
+	defer s.tkaMu.RUnlock()
+
+	status := types.TKALockStatus{
+		Enabled:                     s.tkaEnabled,
+		DisablementSecretConfigured: len(s.tkaDisablementSecret) > 0,
+		TrustedKeys:                 make([]types.TKATrustedKey, 0),
+	}
+
+	if s.tkaEnabled && s.tkaAuthority != nil {
+		head := s.tkaAuthority.Head()
+		if headText, err := head.MarshalText(); err == nil {
+			status.Head = string(headText)
+		}
+
+		for _, k := range s.tkaAuthority.Keys() {
+			var keyIDStr, pubStr string
+			if id, err := k.ID(); err == nil {
+				if len(id) == ed25519.PublicKeySize {
+					keyIDStr = key.NLPublicFromEd25519Unsafe(ed25519.PublicKey(id)).CLIString()
+				} else {
+					keyIDStr = hex.EncodeToString(id)
+				}
+			}
+			if len(k.Public) == ed25519.PublicKeySize {
+				pubStr = key.NLPublicFromEd25519Unsafe(ed25519.PublicKey(k.Public)).CLIString()
+			} else {
+				pubStr = hex.EncodeToString(k.Public)
+			}
+			status.TrustedKeys = append(status.TrustedKeys, types.TKATrustedKey{
+				KeyID:     keyIDStr,
+				PublicKey: pubStr,
+				Votes:     k.Votes,
+				Kind:      k.Kind.String(),
+				Metadata:  k.Meta,
+			})
+		}
+	}
+
+	// Calculate summary from nodes
+	nodes := s.ListNodes()
+	status.Summary.TotalNodes = nodes.Len()
+	for _, n := range nodes.All() {
+		sigBytes := n.KeySignature().AsSlice()
+		signed := len(sigBytes) > 0
+		if signed {
+			status.Summary.SignedNodes++
+			if s.tkaEnabled && s.tkaAuthority != nil {
+				if err := s.tkaAuthority.NodeKeyAuthorized(n.NodeKey(), tkatype.MarshaledSignature(sigBytes)); err == nil {
+					status.Summary.AuthorizedNodes++
+				}
+			}
+		} else {
+			status.Summary.UnsignedNodes++
+		}
+	}
+
+	return status
 }
