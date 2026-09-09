@@ -50,6 +50,12 @@ var lockStatusCmd = &cobra.Command{
 			return printOutput(cmd, status, "")
 		}
 
+		if !status.ConfigEnabled {
+			pterm.Println("Tailnet lock is disabled in the server configuration.")
+			pterm.Println("To enable it, set 'tailnet_lock.enabled: true' in config.yaml and restart headscale.")
+			return nil
+		}
+
 		statusStr := pterm.LightRed("Disabled")
 		if status.Enabled {
 			statusStr = pterm.LightGreen("Enabled")

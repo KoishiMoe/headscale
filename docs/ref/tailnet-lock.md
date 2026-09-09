@@ -132,20 +132,28 @@ When updating this fork against future upstream `juanfont/headscale` releases or
   - If upstream added migrations with later timestamps, our migration stays right where it was committed (migration history is immutable).
   - Run `go test ./hscontrol/db/...` (which executes SQLite and squibble migration validation tests).
 
-### E. Quick Smoke Test Verification
+### E. If Upstream Introduces Dynamic Config Reloading (SIGHUP or File Watching)
+- **Current Behavior**: SIGHUP in Headscale (`hscontrol/app.go:777`) exclusively reloads ACL policy (`h.state.ReloadPolicy()`). `config.yaml` is immutable at runtime and re-read only upon process start.
+- **CRITICAL SAFETY INVARIANT**: If upstream introduces dynamic `config.yaml` reloading:
+  - **Never permit dynamically setting `tailnet_lock.enabled: false` while the network is locked.**
+  - If `s.tkaEnabled == true` (the tailnet is locked), any runtime reload attempting to set `tailnet_lock.enabled: false` **must be rejected** with an error. The control server cannot unilaterally turn off cryptographic lock verification while clients are actively expecting signed keys.
+  - Tailnet Lock must always be disabled from an authorized client node via `tailscale lock disable <secret>` before the server configuration can be toggled off.
+
+### F. Quick Smoke Test Verification
 To verify the implementation after a rebase without needing Docker:
-1. Build Headscale: `go build ./cmd/headscale`
-2. Start test server with local SQLite and DERP map.
-3. Start two Tailscale client nodes in userspace networking mode:
+1. Ensure `tailnet_lock.enabled: true` in `config.yaml`.
+2. Build Headscale: `go build ./cmd/headscale`
+3. Start test server with local SQLite and DERP map.
+4. Start two Tailscale client nodes in userspace networking mode:
    ```bash
    tailscaled --tun=userspace-networking --socket=/tmp/node1.sock --port=41111
    tailscale --socket=/tmp/node1.sock up --login-server=http://127.0.0.1:8080 --authkey=<key>
    ```
-4. Verify `tailscale --socket=/tmp/node1.sock lock status`.
-5. Run `tailscale --socket=/tmp/node1.sock lock init --confirm --gen-disablements 1 <node1-tlpub>`.
-6. Verify status transitions to `Tailnet Lock is ENABLED`.
-7. Run `tailscale --socket=/tmp/node1.sock lock disable <secret>`.
-8. Verify status transitions back to `Tailnet Lock is NOT enabled`.
+5. Verify `tailscale --socket=/tmp/node1.sock lock status`.
+6. Run `tailscale --socket=/tmp/node1.sock lock init --confirm --gen-disablements 1 <node1-tlpub>`.
+7. Verify status transitions to `Tailnet Lock is ENABLED`.
+8. Run `tailscale --socket=/tmp/node1.sock lock disable <secret>`.
+9. Verify status transitions back to `Tailnet Lock is NOT enabled`.
 
 ---
 
@@ -163,7 +171,7 @@ headscale lock status
 headscale tailnet-lock status
 ```
 
-**Example Output (Human-readable)**:
+**Example Output (When enabled in server configuration)**:
 ```text
 Tailnet Lock Status
   Status:                     Enabled
@@ -177,6 +185,12 @@ Tailnet Lock Status
 Trusted Signing Keys
   #  Key ID                 Public Key (TLK)       Votes  Kind
   1  tlpub:abc123...        tlpub:abc123...        1      25519
+```
+
+**Example Output (When disabled in server configuration)**:
+```text
+Tailnet lock is disabled in the server configuration.
+To enable it, set 'tailnet_lock.enabled: true' in config.yaml and restart headscale.
 ```
 
 **JSON Output (`--output json`)**:
