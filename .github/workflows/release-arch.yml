@@ -39,10 +39,15 @@ jobs:
           # Arch pkgver cannot contain hyphens; replace with underscores for pre-releases
           ARCH_PKGVER="${PKGVER//-/_}"
 
+          COMMIT=$(git rev-parse HEAD)
+          BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "pkgver=${PKGVER}" >> "$GITHUB_OUTPUT"
           echo "arch_pkgver=${ARCH_PKGVER}" >> "$GITHUB_OUTPUT"
-          echo "Building headscale for tag: ${TAG} (pkgver: ${ARCH_PKGVER})"
+          echo "commit=${COMMIT}" >> "$GITHUB_OUTPUT"
+          echo "build_time=${BUILD_TIME}" >> "$GITHUB_OUTPUT"
+          echo "Building headscale for tag: ${TAG} (pkgver: ${ARCH_PKGVER}, commit: ${COMMIT}, build time: ${BUILD_TIME})"
 
       - name: Build Arch Linux package
         run: |
@@ -55,8 +60,11 @@ jobs:
           docker run --rm \
             -v "${PWD}:/workspace" \
             -w /workspace \
+            -e TAG="${{ steps.vars.outputs.tag }}" \
             -e PKGVER="${{ steps.vars.outputs.pkgver }}" \
             -e ARCH_PKGVER="${{ steps.vars.outputs.arch_pkgver }}" \
+            -e COMMIT="${{ steps.vars.outputs.commit }}" \
+            -e BUILD_TIME="${{ steps.vars.outputs.build_time }}" \
             archlinux:latest bash -c '
               set -euo pipefail
 
@@ -86,7 +94,7 @@ jobs:
               chown -R builder:builder "${BUILD_DIR}"
 
               # Update checksums for source tarball and support files, then build package
-              su - builder -c "cd ${BUILD_DIR} && updpkgsums && makepkg -fc --noconfirm"
+              su - builder -c "cd ${BUILD_DIR} && updpkgsums && TAG=\"${TAG}\" COMMIT=\"${COMMIT}\" BUILD_TIME=\"${BUILD_TIME}\" makepkg -fc --noconfirm"
 
               # Copy output packages to workspace
               cp "${BUILD_DIR}"/*.pkg.tar.zst /workspace/dist/
