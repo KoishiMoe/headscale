@@ -135,7 +135,7 @@ func TestAPIV1Lock(t *testing.T) {
 		assert.True(t, status.ConfigEnabled)
 		assert.True(t, status.Enabled)
 		assert.NotEmpty(t, status.Head)
-		assert.True(t, status.DisablementSecretConfigured)
+		assert.Equal(t, 1, status.DisablementSecretsCount)
 		assert.Len(t, status.TrustedKeys, 1)
 		assert.Equal(t, uint(1), status.TrustedKeys[0].Votes)
 		assert.Equal(t, 1, status.Summary.TotalNodes)

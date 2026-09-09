@@ -185,7 +185,7 @@ headscale tailnet-lock status
 Tailnet Lock Status
   Status:                     Enabled
   Head AUM Hash:              5f8d9b1c0e3a4789234b6e51c890f12456e7890a12b34c56d78e901f23456789
-  Disablement Secret:         Yes
+  Disablement Secrets:        1 configured
   Total Nodes:                4
   Signed Nodes:               3
   Authorized Nodes:           3
@@ -208,7 +208,7 @@ headscale lock status -o json
 ```
 ```json
 {
-	"disablementSecretConfigured": true,
+	"disablementSecretsCount": 1,
 	"enabled": true,
 	"head": "5f8d9b1c0e3a4789234b6e51c890f12456e7890a12b34c56d78e901f23456789",
 	"summary": {

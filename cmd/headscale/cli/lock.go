@@ -66,15 +66,12 @@ var lockStatusCmd = &cobra.Command{
 			headStr = *status.Head
 		}
 
-		secretStr := pterm.LightRed("No")
-		if status.DisablementSecretConfigured {
-			secretStr = pterm.LightGreen("Yes")
-		}
-
 		pterm.DefaultSection.Println("Tailnet Lock Status")
 		pterm.Printf("  Status:                     %s\n", statusStr)
 		pterm.Printf("  Head AUM Hash:              %s\n", headStr)
-		pterm.Printf("  Disablement Secret:         %s\n", secretStr)
+		if status.Enabled && status.DisablementSecretsCount > 0 {
+			pterm.Printf("  Disablement Secrets:        %d configured\n", status.DisablementSecretsCount)
+		}
 		pterm.Printf("  Total Nodes:                %d\n", status.Summary.TotalNodes)
 		pterm.Printf("  Signed Nodes:               %d\n", status.Summary.SignedNodes)
 		pterm.Printf("  Authorized Nodes:           %d\n", status.Summary.AuthorizedNodes)

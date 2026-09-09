@@ -43,7 +43,7 @@ func TestLockCLICommands(t *testing.T) {
 		ConfigEnabled:               true,
 		Enabled:                     true,
 		Head:                        &head,
-		DisablementSecretConfigured: true,
+		DisablementSecretsCount: 1,
 		Summary: clientv1.TKASummary{
 			TotalNodes:      2,
 			SignedNodes:     1,
@@ -95,6 +95,7 @@ func TestLockCLICommands(t *testing.T) {
 		assert.True(t, res.JSON200.ConfigEnabled)
 		assert.True(t, res.JSON200.Enabled)
 		assert.Equal(t, head, *res.JSON200.Head)
+		assert.Equal(t, int64(1), res.JSON200.DisablementSecretsCount)
 		assert.Equal(t, int64(2), res.JSON200.Summary.TotalNodes)
 		assert.Equal(t, int64(1), res.JSON200.Summary.SignedNodes)
 	})

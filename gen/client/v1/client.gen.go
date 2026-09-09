@@ -306,12 +306,12 @@ type SetTagsRequestBody struct {
 
 // TKALockStatus defines model for TKALockStatus.
 type TKALockStatus struct {
-	ConfigEnabled               bool             `json:"configEnabled"`
-	DisablementSecretConfigured bool             `json:"disablementSecretConfigured"`
-	Enabled                     bool             `json:"enabled"`
-	Head                        *string          `json:"head,omitempty"`
-	Summary                     TKASummary       `json:"summary"`
-	TrustedKeys                 *[]TKATrustedKey `json:"trustedKeys"`
+	ConfigEnabled           bool             `json:"configEnabled"`
+	DisablementSecretsCount int64            `json:"disablementSecretsCount"`
+	Enabled                 bool             `json:"enabled"`
+	Head                    *string          `json:"head,omitempty"`
+	Summary                 TKASummary       `json:"summary"`
+	TrustedKeys             *[]TKATrustedKey `json:"trustedKeys"`
 }
 
 // TKANodeLockStatus defines model for TKANodeLockStatus.

@@ -30,12 +30,12 @@ func (TKAAUM) TableName() string {
 
 // TKALockStatus describes the overall Tailnet Key Authority (TKA) lock status.
 type TKALockStatus struct {
-	ConfigEnabled               bool            `json:"configEnabled"`
-	Enabled                     bool            `json:"enabled"`
-	Head                        string          `json:"head,omitempty"`
-	DisablementSecretConfigured bool            `json:"disablementSecretConfigured"`
-	TrustedKeys                 []TKATrustedKey `json:"trustedKeys"`
-	Summary                     TKASummary      `json:"summary"`
+	ConfigEnabled           bool            `json:"configEnabled"`
+	Enabled                 bool            `json:"enabled"`
+	Head                    string          `json:"head,omitempty"`
+	DisablementSecretsCount int             `json:"disablementSecretsCount"`
+	TrustedKeys             []TKATrustedKey `json:"trustedKeys"`
+	Summary                 TKASummary      `json:"summary"`
 }
 
 // TKATrustedKey describes a trusted signing key in the TKA.

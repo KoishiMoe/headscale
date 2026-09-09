@@ -125,7 +125,7 @@ func TestTKALifecycle(t *testing.T) {
 	assert.True(t, finishChange.IsFull())
 
 	assert.True(t, s.TKAEnabled())
-	assert.True(t, s.TKALockStatus().DisablementSecretConfigured)
+	assert.Equal(t, 1, s.TKALockStatus().DisablementSecretsCount)
 	info := s.TKAInfo()
 	require.NotNil(t, info)
 	assert.NotEmpty(t, info.Head)
@@ -151,7 +151,7 @@ func TestTKALifecycle(t *testing.T) {
 	info2 := s2.TKAInfo()
 	require.NotNil(t, info2)
 	assert.Equal(t, originalHead, info2.Head)
-	assert.True(t, s2.TKALockStatus().DisablementSecretConfigured)
+	assert.Equal(t, 1, s2.TKALockStatus().DisablementSecretsCount)
 
 	n2, ok := s2.GetNodeByID(nodeID)
 	require.True(t, ok)
@@ -260,7 +260,7 @@ func TestTKALifecycle(t *testing.T) {
 	assert.True(t, reinitChange.IsFull())
 
 	assert.True(t, s3.TKAEnabled())
-	assert.True(t, s3.TKALockStatus().DisablementSecretConfigured)
+	assert.Equal(t, 1, s3.TKALockStatus().DisablementSecretsCount)
 	reinitInfo := s3.TKAInfo()
 	require.NotNil(t, reinitInfo)
 	assert.NotEmpty(t, reinitInfo.Head)
@@ -270,12 +270,12 @@ func TestTKALifecycle(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, []byte(reinitSig), []byte(nReinit.KeySignature().AsSlice()))
 
-	// Reopen after reinitialization to ensure DisablementSecretConfigured stays true and DB is not contaminated
+	// Reopen after reinitialization to ensure DisablementSecretsCount stays true and DB is not contaminated
 	require.NoError(t, s3.Close())
 	s4, err := persistTestReopenTKA(t, dbPath, true)
 	require.NoError(t, err)
 	assert.True(t, s4.TKAEnabled())
-	assert.True(t, s4.TKALockStatus().DisablementSecretConfigured)
+	assert.Equal(t, 1, s4.TKALockStatus().DisablementSecretsCount)
 	assert.Nil(t, s4.tkaDisablementSecret)
 }
 
