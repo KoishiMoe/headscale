@@ -38,6 +38,19 @@ func (v *VersionInfo) String() string {
 	return sb.String()
 }
 
+// Variables that can be overwritten at build time via -ldflags:
+//
+//	-X github.com/juanfont/headscale/hscontrol/types.Version=...
+//	-X github.com/juanfont/headscale/hscontrol/types.Commit=...
+//	-X github.com/juanfont/headscale/hscontrol/types.GitCommitHash=...
+//	-X github.com/juanfont/headscale/hscontrol/types.BuildTime=...
+var (
+	Version       = ""
+	Commit        = ""
+	GitCommitHash = ""
+	BuildTime     = ""
+)
+
 var buildInfo = sync.OnceValues(debug.ReadBuildInfo)
 
 var GetVersionInfo = sync.OnceValue(func() *VersionInfo {
@@ -53,25 +66,37 @@ var GetVersionInfo = sync.OnceValue(func() *VersionInfo {
 	}
 
 	buildInfo, ok := buildInfo()
-	if !ok {
-		return info
-	}
-
-	// Extract version from module path or main version
-	if buildInfo.Main.Version != "" && buildInfo.Main.Version != "(devel)" {
-		info.Version = buildInfo.Main.Version
-	}
-
-	// Extract build settings
-	for _, setting := range buildInfo.Settings {
-		switch setting.Key {
-		case "vcs.revision":
-			info.Commit = setting.Value
-		case "vcs.modified":
-			info.Dirty = setting.Value == "true"
-		case "vcs.time":
-			info.BuildTime = setting.Value
+	if ok {
+		// Extract version from module path or main version
+		if buildInfo.Main.Version != "" && buildInfo.Main.Version != "(devel)" {
+			info.Version = buildInfo.Main.Version
 		}
+
+		// Extract build settings
+		for _, setting := range buildInfo.Settings {
+			switch setting.Key {
+			case "vcs.revision":
+				info.Commit = setting.Value
+			case "vcs.modified":
+				info.Dirty = setting.Value == "true"
+			case "vcs.time":
+				info.BuildTime = setting.Value
+			}
+		}
+	}
+
+	if Version != "" {
+		info.Version = Version
+	}
+
+	if Commit != "" {
+		info.Commit = Commit
+	} else if GitCommitHash != "" {
+		info.Commit = GitCommitHash
+	}
+
+	if BuildTime != "" {
+		info.BuildTime = BuildTime
 	}
 
 	return info
