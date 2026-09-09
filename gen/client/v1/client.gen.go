@@ -192,6 +192,11 @@ type ExpirePreAuthKeyRequestBody struct {
 	Id *string `json:"id,omitempty"`
 }
 
+// GetLockNodesOutputBody defines model for GetLockNodesOutputBody.
+type GetLockNodesOutputBody struct {
+	Nodes *[]TKANodeLockStatus `json:"nodes"`
+}
+
 // HealthResponseBody defines model for HealthResponseBody.
 type HealthResponseBody struct {
 	DatabaseConnectivity bool `json:"databaseConnectivity"`
@@ -297,6 +302,44 @@ type SetApprovedRoutesRequestBody struct {
 // SetTagsRequestBody defines model for SetTagsRequestBody.
 type SetTagsRequestBody struct {
 	Tags *[]string `json:"tags,omitempty"`
+}
+
+// TKALockStatus defines model for TKALockStatus.
+type TKALockStatus struct {
+	DisablementSecretConfigured bool             `json:"disablementSecretConfigured"`
+	Enabled                     bool             `json:"enabled"`
+	Head                        *string          `json:"head,omitempty"`
+	Summary                     TKASummary       `json:"summary"`
+	TrustedKeys                 *[]TKATrustedKey `json:"trustedKeys"`
+}
+
+// TKANodeLockStatus defines model for TKANodeLockStatus.
+type TKANodeLockStatus struct {
+	Authorized   bool    `json:"authorized"`
+	GivenName    string  `json:"givenName"`
+	Hostname     string  `json:"hostname"`
+	Id           string  `json:"id"`
+	NodeKey      string  `json:"nodeKey"`
+	Owner        string  `json:"owner"`
+	Signed       bool    `json:"signed"`
+	SigningKeyId *string `json:"signingKeyId,omitempty"`
+}
+
+// TKASummary defines model for TKASummary.
+type TKASummary struct {
+	AuthorizedNodes int64 `json:"authorizedNodes"`
+	SignedNodes     int64 `json:"signedNodes"`
+	TotalNodes      int64 `json:"totalNodes"`
+	UnsignedNodes   int64 `json:"unsignedNodes"`
+}
+
+// TKATrustedKey defines model for TKATrustedKey.
+type TKATrustedKey struct {
+	KeyId     string             `json:"keyId"`
+	Kind      string             `json:"kind"`
+	Metadata  *map[string]string `json:"metadata,omitempty"`
+	PublicKey string             `json:"publicKey"`
+	Votes     int64              `json:"votes"`
 }
 
 // User defines model for User.
@@ -505,6 +548,12 @@ type ClientInterface interface {
 
 	// Health request
 	Health(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetTailnetLockStatus request
+	GetTailnetLockStatus(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetTailnetLockNodes request
+	GetTailnetLockNodes(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListNodes request
 	ListNodes(ctx context.Context, params *ListNodesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -753,6 +802,30 @@ func (c *Client) DebugCreateNode(ctx context.Context, body DebugCreateNodeJSONRe
 
 func (c *Client) Health(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewHealthRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetTailnetLockStatus(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetTailnetLockStatusRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetTailnetLockNodes(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetTailnetLockNodesRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -1437,6 +1510,60 @@ func NewHealthRequest(server string) (*http.Request, error) {
 	}
 
 	operationPath := fmt.Sprintf("/api/v1/health")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetTailnetLockStatusRequest generates requests for GetTailnetLockStatus
+func NewGetTailnetLockStatusRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/lock")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetTailnetLockNodesRequest generates requests for GetTailnetLockNodes
+func NewGetTailnetLockNodesRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/lock/nodes")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -2421,6 +2548,12 @@ type ClientWithResponsesInterface interface {
 	// HealthWithResponse request
 	HealthWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*HealthResponse, error)
 
+	// GetTailnetLockStatusWithResponse request
+	GetTailnetLockStatusWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetTailnetLockStatusResponse, error)
+
+	// GetTailnetLockNodesWithResponse request
+	GetTailnetLockNodesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetTailnetLockNodesResponse, error)
+
 	// ListNodesWithResponse request
 	ListNodesWithResponse(ctx context.Context, params *ListNodesParams, reqEditors ...RequestEditorFn) (*ListNodesResponse, error)
 
@@ -2771,6 +2904,68 @@ func (r HealthResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r HealthResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetTailnetLockStatusResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *TKALockStatus
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetTailnetLockStatusResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetTailnetLockStatusResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetTailnetLockStatusResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetTailnetLockNodesResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *GetLockNodesOutputBody
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetTailnetLockNodesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetTailnetLockNodesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetTailnetLockNodesResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -3526,6 +3721,24 @@ func (c *ClientWithResponses) HealthWithResponse(ctx context.Context, reqEditors
 	return ParseHealthResponse(rsp)
 }
 
+// GetTailnetLockStatusWithResponse request returning *GetTailnetLockStatusResponse
+func (c *ClientWithResponses) GetTailnetLockStatusWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetTailnetLockStatusResponse, error) {
+	rsp, err := c.GetTailnetLockStatus(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetTailnetLockStatusResponse(rsp)
+}
+
+// GetTailnetLockNodesWithResponse request returning *GetTailnetLockNodesResponse
+func (c *ClientWithResponses) GetTailnetLockNodesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetTailnetLockNodesResponse, error) {
+	rsp, err := c.GetTailnetLockNodes(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetTailnetLockNodesResponse(rsp)
+}
+
 // ListNodesWithResponse request returning *ListNodesResponse
 func (c *ClientWithResponses) ListNodesWithResponse(ctx context.Context, params *ListNodesParams, reqEditors ...RequestEditorFn) (*ListNodesResponse, error) {
 	rsp, err := c.ListNodes(ctx, params, reqEditors...)
@@ -4050,6 +4263,72 @@ func ParseHealthResponse(rsp *http.Response) (*HealthResponse, error) {
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest HealthResponseBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetTailnetLockStatusResponse parses an HTTP response from a GetTailnetLockStatusWithResponse call
+func ParseGetTailnetLockStatusResponse(rsp *http.Response) (*GetTailnetLockStatusResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetTailnetLockStatusResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest TKALockStatus
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetTailnetLockNodesResponse parses an HTTP response from a GetTailnetLockNodesWithResponse call
+func ParseGetTailnetLockNodesResponse(rsp *http.Response) (*GetTailnetLockNodesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetTailnetLockNodesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest GetLockNodesOutputBody
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
