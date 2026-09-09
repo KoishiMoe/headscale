@@ -29,7 +29,20 @@ build() {
    export CGO_LDFLAGS="${LDFLAGS}"
    export GOFLAGS="-buildmode=pie -trimpath -mod=readonly -modcacherw"
    export GOAMD64=v4  # Or v3 for older cpus
-   go build -v -o headscale -tags="ts2019" -ldflags "-linkmode external -extldflags \"${LDFLAGS}\" -s -w -X github.com/juanfont/headscale/cmd/headscale/cli.Version=${pkgver}" ./cmd/headscale
+   local _version="${TAG:-v${pkgver//_/-}}"
+   local _commit="${COMMIT:-}"
+   local _build_time="${BUILD_TIME:-}"
+
+   local _ldflags="-linkmode external -extldflags \"${LDFLAGS}\" -s -w"
+   _ldflags+=" -X github.com/juanfont/headscale/hscontrol/types.Version=${_version}"
+   if [ -n "${_commit}" ]; then
+      _ldflags+=" -X github.com/juanfont/headscale/hscontrol/types.Commit=${_commit}"
+   fi
+   if [ -n "${_build_time}" ]; then
+      _ldflags+=" -X github.com/juanfont/headscale/hscontrol/types.BuildTime=${_build_time}"
+   fi
+
+   go build -v -o headscale -tags="ts2019" -ldflags "${_ldflags}" ./cmd/headscale
 }
 
 package() {
