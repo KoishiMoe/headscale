@@ -77,6 +77,7 @@ func TestTailNode(t *testing.T) {
 					tailcfg.CapabilityAdmin:           []tailcfg.RawMessage{},
 					tailcfg.CapabilitySSH:             []tailcfg.RawMessage{},
 					tailcfg.CapabilityFileSharing:     []tailcfg.RawMessage{},
+					tailcfg.CapabilityTailnetLock:     []tailcfg.RawMessage{},
 					tailcfg.NodeAttrDefaultAutoUpdate: []tailcfg.RawMessage{tailcfg.RawMessage("false")},
 				},
 			},
@@ -166,6 +167,7 @@ func TestTailNode(t *testing.T) {
 					tailcfg.CapabilityAdmin:           []tailcfg.RawMessage{},
 					tailcfg.CapabilitySSH:             []tailcfg.RawMessage{},
 					tailcfg.CapabilityFileSharing:     []tailcfg.RawMessage{},
+					tailcfg.CapabilityTailnetLock:     []tailcfg.RawMessage{},
 					tailcfg.NodeAttrDefaultAutoUpdate: []tailcfg.RawMessage{tailcfg.RawMessage("false")},
 				},
 			},
@@ -191,6 +193,7 @@ func TestTailNode(t *testing.T) {
 					tailcfg.CapabilityAdmin:           []tailcfg.RawMessage{},
 					tailcfg.CapabilitySSH:             []tailcfg.RawMessage{},
 					tailcfg.CapabilityFileSharing:     []tailcfg.RawMessage{},
+					tailcfg.CapabilityTailnetLock:     []tailcfg.RawMessage{},
 					tailcfg.NodeAttrDefaultAutoUpdate: []tailcfg.RawMessage{tailcfg.RawMessage("false")},
 				},
 			},
@@ -209,6 +212,7 @@ func TestTailNode(t *testing.T) {
 				BaseDomain:       tt.baseDomain,
 				TailcfgDNSConfig: tt.dnsConfig,
 				Taildrop:         types.TaildropConfig{Enabled: true},
+				TailnetLock:      types.TailnetLockConfig{Enabled: true},
 			}
 
 			// Stub primary-route lookup: tt.node owns its SubnetRoutes,
@@ -315,6 +319,29 @@ func TestTailNodeBaselineGates(t *testing.T) {
 				tailcfg.CapabilityAdmin:           []tailcfg.RawMessage{},
 				tailcfg.CapabilitySSH:             []tailcfg.RawMessage{},
 				tailcfg.NodeAttrDefaultAutoUpdate: autoUpdate(true),
+			},
+		},
+		{
+			name: "tailnetlock_on",
+			cfg: &types.Config{
+				TailnetLock: types.TailnetLockConfig{Enabled: true},
+			},
+			want: tailcfg.NodeCapMap{
+				tailcfg.CapabilityAdmin:           []tailcfg.RawMessage{},
+				tailcfg.CapabilitySSH:             []tailcfg.RawMessage{},
+				tailcfg.CapabilityTailnetLock:     []tailcfg.RawMessage{},
+				tailcfg.NodeAttrDefaultAutoUpdate: autoUpdate(false),
+			},
+		},
+		{
+			name: "tailnetlock_off",
+			cfg: &types.Config{
+				TailnetLock: types.TailnetLockConfig{Enabled: false},
+			},
+			want: tailcfg.NodeCapMap{
+				tailcfg.CapabilityAdmin:           []tailcfg.RawMessage{},
+				tailcfg.CapabilitySSH:             []tailcfg.RawMessage{},
+				tailcfg.NodeAttrDefaultAutoUpdate: autoUpdate(false),
 			},
 		},
 	}

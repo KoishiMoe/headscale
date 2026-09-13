@@ -136,9 +136,10 @@ type Config struct {
 
 	OIDC OIDCConfig
 
-	LogTail    LogTailConfig
-	Taildrop   TaildropConfig
-	AutoUpdate AutoUpdateConfig
+	LogTail     LogTailConfig
+	Taildrop    TaildropConfig
+	AutoUpdate  AutoUpdateConfig
+	TailnetLock TailnetLockConfig
 
 	CLI CLIConfig
 
@@ -266,6 +267,13 @@ type TaildropConfig struct {
 // node's CapMap; clients fall back to that default unless they have
 // opted in or out locally.
 type AutoUpdateConfig struct {
+	Enabled bool
+}
+
+// TailnetLockConfig controls the tailnet-wide availability of Tailnet Lock (TKA).
+// When Enabled is true, headscale emits [tailcfg.CapabilityTailnetLock] on nodes' CapMap
+// and allows nodes to initialize and participate in the Tailnet Key Authority.
+type TailnetLockConfig struct {
 	Enabled bool
 }
 
@@ -474,6 +482,7 @@ func LoadConfig(path string, isFile bool) error {
 	viper.SetDefault("logtail.enabled", false)
 	viper.SetDefault("taildrop.enabled", true)
 	viper.SetDefault("auto_update.enabled", false)
+	viper.SetDefault("tailnet_lock.enabled", false)
 
 	viper.SetDefault("node.expiry", "0")
 	viper.SetDefault("node.ephemeral.inactivity_timeout", "120s")
@@ -1314,6 +1323,9 @@ func LoadServerConfig() (*Config, error) {
 		},
 		AutoUpdate: AutoUpdateConfig{
 			Enabled: viper.GetBool("auto_update.enabled"),
+		},
+		TailnetLock: TailnetLockConfig{
+			Enabled: viper.GetBool("tailnet_lock.enabled"),
 		},
 
 		Policy: policyConfig(),
