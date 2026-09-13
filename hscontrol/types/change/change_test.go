@@ -74,6 +74,11 @@ func TestChange_IsEmpty(t *testing.T) {
 			want:     false,
 		},
 		{
+			name:     "IncludeTKA not empty",
+			response: Change{IncludeTKA: true},
+			want:     false,
+		},
+		{
 			name:     "SendAllPeers not empty",
 			response: Change{SendAllPeers: true},
 			want:     false,
@@ -427,7 +432,17 @@ func TestChange_Constructors(t *testing.T) {
 				IncludeDNS:     true,
 				IncludeDomain:  true,
 				IncludePolicy:  true,
+				IncludeTKA:     true,
 				SendAllPeers:   true,
+			},
+		},
+		{
+			name:        "TKAOnlyResponse",
+			constructor: TKAOnly,
+			wantReason:  "tka update",
+			want: Change{
+				Reason:     "tka update",
+				IncludeTKA: true,
 			},
 		},
 		{
@@ -550,6 +565,11 @@ func TestChange_Type(t *testing.T) {
 		{
 			name:     "config - policy only (no runtime)",
 			response: PolicyOnly(),
+			want:     "config",
+		},
+		{
+			name:     "config - TKA only",
+			response: TKAOnly(),
 			want:     "config",
 		},
 		{
