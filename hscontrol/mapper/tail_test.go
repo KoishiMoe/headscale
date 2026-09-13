@@ -78,6 +78,7 @@ func TestTailNode(t *testing.T) {
 					nodecap.Admin:                   []tailcfg.RawMessage{},
 					nodecap.SSH:                     []tailcfg.RawMessage{},
 					nodecap.FileSharing:             []tailcfg.RawMessage{},
+					nodecap.TailnetLock:             []tailcfg.RawMessage{},
 					nodecap.DefaultAutoUpdate:       []tailcfg.RawMessage{tailcfg.RawMessage("false")},
 					nodecap.SSHEnvironmentVariables: []tailcfg.RawMessage{},
 				},
@@ -168,6 +169,7 @@ func TestTailNode(t *testing.T) {
 					nodecap.Admin:                   []tailcfg.RawMessage{},
 					nodecap.SSH:                     []tailcfg.RawMessage{},
 					nodecap.FileSharing:             []tailcfg.RawMessage{},
+					nodecap.TailnetLock:             []tailcfg.RawMessage{},
 					nodecap.DefaultAutoUpdate:       []tailcfg.RawMessage{tailcfg.RawMessage("false")},
 					nodecap.SSHEnvironmentVariables: []tailcfg.RawMessage{},
 				},
@@ -194,6 +196,7 @@ func TestTailNode(t *testing.T) {
 					nodecap.Admin:                   []tailcfg.RawMessage{},
 					nodecap.SSH:                     []tailcfg.RawMessage{},
 					nodecap.FileSharing:             []tailcfg.RawMessage{},
+					nodecap.TailnetLock:             []tailcfg.RawMessage{},
 					nodecap.DefaultAutoUpdate:       []tailcfg.RawMessage{tailcfg.RawMessage("false")},
 					nodecap.SSHEnvironmentVariables: []tailcfg.RawMessage{},
 				},
@@ -213,6 +216,7 @@ func TestTailNode(t *testing.T) {
 				BaseDomain:       tt.baseDomain,
 				TailcfgDNSConfig: tt.dnsConfig,
 				Taildrop:         types.TaildropConfig{Enabled: true},
+				TailnetLock:      types.TailnetLockConfig{Enabled: true},
 			}
 
 			// Stub primary-route lookup: tt.node owns its SubnetRoutes,
@@ -322,6 +326,31 @@ func TestTailNodeBaselineGates(t *testing.T) {
 				nodecap.Admin:                   []tailcfg.RawMessage{},
 				nodecap.SSH:                     []tailcfg.RawMessage{},
 				nodecap.DefaultAutoUpdate:       autoUpdate(true),
+				nodecap.SSHEnvironmentVariables: []tailcfg.RawMessage{},
+			},
+		},
+		{
+			name: "tailnetlock_on",
+			cfg: &types.Config{
+				TailnetLock: types.TailnetLockConfig{Enabled: true},
+			},
+			want: tailcfg.NodeCapMap{
+				nodecap.Admin:                   []tailcfg.RawMessage{},
+				nodecap.SSH:                     []tailcfg.RawMessage{},
+				nodecap.TailnetLock:             []tailcfg.RawMessage{},
+				nodecap.DefaultAutoUpdate:       autoUpdate(false),
+				nodecap.SSHEnvironmentVariables: []tailcfg.RawMessage{},
+			},
+		},
+		{
+			name: "tailnetlock_off",
+			cfg: &types.Config{
+				TailnetLock: types.TailnetLockConfig{Enabled: false},
+			},
+			want: tailcfg.NodeCapMap{
+				nodecap.Admin:                   []tailcfg.RawMessage{},
+				nodecap.SSH:                     []tailcfg.RawMessage{},
+				nodecap.DefaultAutoUpdate:       autoUpdate(false),
 				nodecap.SSHEnvironmentVariables: []tailcfg.RawMessage{},
 			},
 		},

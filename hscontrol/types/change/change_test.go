@@ -51,6 +51,7 @@ func TestChange_FullUpdateSubsumesAllButPing(t *testing.T) {
 		"IncludeDNS":                     false,
 		"IncludeDomain":                  false,
 		"IncludePolicy":                  false,
+		"IncludeTKA":                     false,
 		"PeersChanged":                   false, // SendAllPeers re-lists every peer
 		"PeersRemoved":                   false, // diffed from the full's peer list
 		"PeerPatches":                    false, // peers rendered from current state
@@ -149,6 +150,11 @@ func TestChange_IsEmpty(t *testing.T) {
 		{
 			name:     "IncludePolicy not empty",
 			response: Change{IncludePolicy: true},
+			want:     false,
+		},
+		{
+			name:     "IncludeTKA not empty",
+			response: Change{IncludeTKA: true},
 			want:     false,
 		},
 		{
@@ -505,7 +511,17 @@ func TestChange_Constructors(t *testing.T) {
 				IncludeDNS:     true,
 				IncludeDomain:  true,
 				IncludePolicy:  true,
+				IncludeTKA:     true,
 				SendAllPeers:   true,
+			},
+		},
+		{
+			name:        "TKAOnlyResponse",
+			constructor: TKAOnly,
+			wantReason:  "tka update",
+			want: Change{
+				Reason:     "tka update",
+				IncludeTKA: true,
 			},
 		},
 		{
@@ -629,6 +645,11 @@ func TestChange_Type(t *testing.T) {
 		{
 			name:     "config - policy only (no runtime)",
 			response: PolicyOnly(),
+			want:     "config",
+		},
+		{
+			name:     "config - TKA only",
+			response: TKAOnly(),
 			want:     "config",
 		},
 		{

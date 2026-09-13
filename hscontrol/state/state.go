@@ -40,7 +40,9 @@ import (
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 	"tailscale.com/tailcfg"
+	"tailscale.com/tka"
 	"tailscale.com/types/key"
+	"tailscale.com/types/tkatype"
 	"tailscale.com/types/views"
 	"tailscale.com/util/dnsname"
 	"tailscale.com/util/truncate"
@@ -112,6 +114,8 @@ var nodeUpdateColumns = []string{
 	"Expiry",
 	"LastSeen",
 	"ApprovedRoutes",
+	"KeySignature",
+	"NLKey",
 	"UpdatedAt",
 }
 
@@ -219,6 +223,15 @@ type State struct {
 	// lock is taken before the request is authenticated, and the client
 	// chooses the machine key.
 	registerLocks *xsync.Map[key.MachinePublic, *registerLock]
+
+	// Tailnet lock (TKA) state
+	tkaMu                sync.RWMutex
+	tkaStorage           tka.CompactableChonk
+	tkaAuthority         *tka.Authority
+	tkaGenesisAUM        *tka.AUM
+	pendingGenesisAUM    *tka.AUM
+	tkaEnabled           bool
+	tkaDisablementSecret []byte
 }
 
 // registerLock is the registration lock of one machine key. refs counts the
@@ -408,6 +421,11 @@ func NewState(cfg *types.Config) (*State, error) {
 	// invalid given name from a legacy row) so an operator can fix them. This
 	// only logs; it never mutates a node's stored name at boot.
 	s.logNodeHealth()
+
+	err = s.initTKA()
+	if err != nil {
+		return nil, fmt.Errorf("initializing tailnet lock: %w", err)
+	}
 
 	return s, nil
 }
@@ -1842,6 +1860,9 @@ type newNodeParams struct {
 	Expiry         *time.Time
 	RegisterMethod string
 
+	KeySignature tkatype.MarshaledSignature
+	NLKey        key.NLPublic
+
 	// Optional: Pre-auth key specific fields
 	PreAuthKey *types.PreAuthKey
 
@@ -1963,6 +1984,15 @@ func (s *State) applyAuthNodeUpdate(params authNodeUpdateParams) (types.NodeView
 		}
 		// Preserve online state during re-registration so a live node does
 		// not appear offline before the client restarts its map stream.
+		// Do NOT reset IsOnline here. Online status is managed exclusively by
+		// [State.Connect]/[State.Disconnect] in the poll session lifecycle.
+
+		if len(regData.KeySignature) > 0 {
+			node.KeySignature = regData.KeySignature
+		}
+		if !regData.NLKey.IsZero() {
+			node.NLKey = regData.NLKey
+		}
 		node.LastSeen = new(time.Now())
 
 		// On conversion (tagged → user) we set the new register method.
@@ -2096,6 +2126,8 @@ func (s *State) createAndSaveNewNode(params newNodeParams) (types.NodeView, erro
 		IsOnline:       new(false), // Explicitly offline until [State.Connect] is called
 		RegisterMethod: params.RegisterMethod,
 		Expiry:         params.Expiry,
+		KeySignature:   params.KeySignature,
+		NLKey:          params.NLKey,
 	}
 
 	// Assign ownership based on PreAuthKey
@@ -2560,6 +2592,8 @@ func (s *State) createNewNodeFromAuth(
 		Endpoints:              regData.Endpoints,
 		Expiry:                 cmp.Or(expiry, regData.Expiry),
 		RegisterMethod:         registrationMethod,
+		KeySignature:           regData.KeySignature,
+		NLKey:                  regData.NLKey,
 		ExistingNodeForNetinfo: existingNodeForNetinfo,
 	})
 }
@@ -2826,6 +2860,12 @@ func (s *State) HandleNodeFromPreAuthKey(
 			}
 
 			node.NodeKey = regReq.NodeKey
+			if len(regReq.NodeKeySignature) > 0 {
+				node.KeySignature = regReq.NodeKeySignature
+			}
+			if !regReq.NLKey.IsZero() {
+				node.NLKey = regReq.NLKey
+			}
 
 			node.RegisterMethod = util.RegisterMethodAuthKey
 
@@ -3025,6 +3065,8 @@ func (s *State) HandleNodeFromPreAuthKey(
 			Endpoints:              nil, // Endpoints not available in RegisterRequest
 			Expiry:                 reqExpiry,
 			RegisterMethod:         util.RegisterMethodAuthKey,
+			KeySignature:           regReq.NodeKeySignature,
+			NLKey:                  regReq.NLKey,
 			PreAuthKey:             pak,
 			ExistingNodeForNetinfo: cmp.Or(differentUserNode, types.NodeView{}),
 		})
