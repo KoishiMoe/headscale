@@ -13,6 +13,7 @@ import (
 	"gorm.io/gorm"
 	"tailscale.com/tailcfg"
 	"tailscale.com/types/key"
+	"tailscale.com/types/tkatype"
 )
 
 // Clone makes a deep copy of User.
@@ -71,6 +72,7 @@ func (src *Node) Clone() *Node {
 		dst.LastSeen = new(*src.LastSeen)
 	}
 	dst.ApprovedRoutes = append(src.ApprovedRoutes[:0:0], src.ApprovedRoutes...)
+	dst.KeySignature = append(src.KeySignature[:0:0], src.KeySignature...)
 	if dst.DeletedAt != nil {
 		dst.DeletedAt = new(*src.DeletedAt)
 	}
@@ -101,6 +103,8 @@ var _NodeCloneNeedsRegeneration = Node(struct {
 	Expiry         *time.Time
 	LastSeen       *time.Time
 	ApprovedRoutes Prefixes
+	KeySignature   tkatype.MarshaledSignature
+	NLKey          key.NLPublic
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 	DeletedAt      *time.Time
