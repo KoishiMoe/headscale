@@ -208,7 +208,6 @@ func (h *Headscale) handleLogout(
 		return &tailcfg.RegisterResponse{
 			NodeKeyExpired:    true,
 			MachineAuthorized: false,
-			NodeKeySignature:  node.KeySignature().AsSlice(),
 			AuthURL:           "", // Client will need to re-authenticate
 		}, nil
 	}
@@ -308,7 +307,6 @@ func nodeToRegisterResponse(node types.NodeView) *tailcfg.RegisterResponse {
 		// so we always return true here.
 		// Revisit this if #2176 gets implemented.
 		MachineAuthorized: true,
-		NodeKeySignature:  node.KeySignature().AsSlice(),
 	}
 
 	// For tagged nodes, use the [types.TaggedDevices] special user
