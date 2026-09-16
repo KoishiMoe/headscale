@@ -4254,3 +4254,54 @@ func TestFollowupWaitPrefersCompletedAuthOverExpiredContext(t *testing.T) {
 		timeouts, iterations)
 	assert.Equal(t, iterations, authorized, "every completed registration must be returned as authorized")
 }
+
+// TestRegisterResponse_SignedNodeReconnectDoesNotDemandKeyRegen tests that when
+// a node signed into tailnet lock reconnects (e.g., tailscaled daemon restart),
+// the server must NOT populate RegisterResponse.NodeKeySignature.
+// In the Tailscale client (controlclient/direct.go: doLogin / doLoginOrRegen),
+// any non-empty RegisterResponse.NodeKeySignature is interpreted as a demand to
+// rotate keys (mustRegen = true). If returned during normal login/reconnection,
+// it forces the client to discard its private key, resulting in unexpected logouts
+// and lockout states.
+func TestRegisterResponse_SignedNodeReconnectDoesNotDemandKeyRegen(t *testing.T) {
+	app := createTestApp(t)
+
+	user := app.state.CreateUserForTest("tka-user")
+	node := app.state.CreateNodeForTest(user, "tka-node")
+	machineKey := key.NewMachine().Public()
+	nodeKey := key.NewNode().Public()
+
+	node.MachineKey = machineKey
+	node.NodeKey = nodeKey
+	node.User = user
+	node.KeySignature = []byte("mock-valid-node-key-signature")
+	app.state.PutNodeInStoreForTest(*node)
+
+	// Case 1: Tailscaled restarts or reconnects (Auth=nil, Expiry=0)
+	req := tailcfg.RegisterRequest{
+		NodeKey: nodeKey,
+		Expiry:  time.Time{},
+	}
+	resp, err := app.handleRegister(context.Background(), req, machineKey)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.True(t, resp.MachineAuthorized)
+	assert.False(t, resp.NodeKeyExpired)
+	assert.Empty(t, resp.NodeKeySignature, "RegisterResponse.NodeKeySignature must be empty to avoid triggering client key regeneration")
+
+	// Case 2: Expired node during logout
+	expiredTime := time.Now().Add(-1 * time.Hour)
+	node.Expiry = &expiredTime
+	app.state.PutNodeInStoreForTest(*node)
+
+	logoutReq := tailcfg.RegisterRequest{
+		NodeKey: nodeKey,
+		Expiry:  expiredTime,
+	}
+	respExpired, err := app.handleRegister(context.Background(), logoutReq, machineKey)
+	require.NoError(t, err)
+	require.NotNil(t, respExpired)
+	assert.True(t, respExpired.NodeKeyExpired)
+	assert.Empty(t, respExpired.NodeKeySignature, "RegisterResponse.NodeKeySignature must be empty on expired node logout")
+}
+
