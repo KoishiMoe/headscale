@@ -59,6 +59,11 @@ The following facts were reverse-engineered and verified against the Tailscale c
 - **Discovery**: When `tailscale lock init --gen-disablements N` is run, the client generates random 32-byte preimages. Only `sha256(preimage)` is transmitted in the Genesis AUM. Disablement requires providing the raw preimage to `/machine/tka/disable`.
 - **Location in Headscale**: Managed automatically by `tailscale.com/tka.Authority` via `dbChonk` in `hscontrol/state/tka.go`.
 
+### F. RegisterResponse Wire Semantics (`tailcfg.RegisterResponse.NodeKeySignature`)
+- **Discovery**: In Tailscale client login flow (`tailscale.com/control/controlclient/direct.go: doLogin`), if `len(resp.NodeKeySignature) > 0`, the client sets `mustRegen = true` and treats the response as a demand from the control server to rotate its node key. The client immediately discards its current private node key (`key.NewNode()`) and attempts `tka.ResignNKS`. On platforms without signing keys or if rotation fails, the client sends an unsigned request with an unknown node key, leading to unexpected logouts and lockouts.
+- **Rule**: `tailcfg.RegisterResponse.NodeKeySignature` must **never** be populated during normal login or reconnection (`nodeToRegisterResponse` / `handleLogout`). A node's valid signature is conveyed to peers and itself strictly via `MapResponse.Node.KeySignature` and `MapResponse.Peers[*].KeySignature`.
+- **Location in Headscale**: `hscontrol/auth.go`.
+
 ---
 
 ## 3. Headscale Architecture Integration
