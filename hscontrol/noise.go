@@ -869,8 +869,9 @@ func (ns *noiseServer) PollNetMapHandler(
 		return
 	}
 
-	// A repeated JSON key can leave a short slice backed by a larger array.
-	mapRequest.Hostinfo = mapRequest.Hostinfo.Clone()
+	// Strip unused telemetry and device fingerprinting fields before
+	// the session, NodeStore, peers, and database retain the report.
+	mapRequest.Hostinfo = types.SanitizeHostinfo(mapRequest.Hostinfo)
 	mapRequest.DebugFlags = nil
 
 	sess := ns.headscale.newMapSession(req.Context(), mapRequest, writer, nv.AsStruct())
@@ -942,8 +943,9 @@ func (ns *noiseServer) RegistrationHandler(
 			return &regReq, regErr(err)
 		}
 
-		// A waiting follow-up must not retain the decoder's excess slice capacity.
-		regReq.Hostinfo = regReq.Hostinfo.Clone()
+		// Strip unused telemetry and device fingerprinting fields before
+		// pending registration, follow-up, or node creation retains the report.
+		regReq.Hostinfo = types.SanitizeHostinfo(regReq.Hostinfo)
 
 		resp, err = ns.headscale.handleRegister(req.Context(), regReq, ns.machineKey)
 		if err != nil {

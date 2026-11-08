@@ -14,10 +14,12 @@ import (
 	v1 "github.com/juanfont/headscale/gen/go/headscale/v1"
 	"github.com/juanfont/headscale/hscontrol/policy/matcher"
 	"github.com/juanfont/headscale/hscontrol/util"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 	"tailscale.com/tailcfg"
 	"tailscale.com/types/key"
+	"tailscale.com/types/opt"
 )
 
 func Test_NodeCanAccess(t *testing.T) {
@@ -1185,4 +1187,153 @@ func TestValidateHostinfo(t *testing.T) {
 			require.True(t, want.Equal(tt.hostinfo), "validation must not change the report")
 		})
 	}
+}
+
+func TestSanitizeHostinfo(t *testing.T) {
+	t.Parallel()
+
+	require.Nil(t, SanitizeHostinfo(nil))
+
+	loc := &tailcfg.Location{
+		Country:     "Norway",
+		CountryCode: "NO",
+		City:        "Oslo",
+		CityCode:    "OSL",
+		Latitude:    59.91,
+		Longitude:   10.75,
+	}
+
+	full := &tailcfg.Hostinfo{
+		IPNVersion:      "1.58.2",
+		FrontendLogID:   "front123",
+		BackendLogID:    "back123",
+		OS:              "linux",
+		OSVersion:       "6.12.0",
+		Container:       opt.Bool("true"),
+		Env:             "kn",
+		Distro:          "debian",
+		DistroVersion:   "12",
+		DistroCodeName:  "bookworm",
+		App:             "test-app",
+		Desktop:         opt.Bool("false"),
+		Package:         "deb",
+		DeviceModel:     "server",
+		PushDeviceToken: "token123",
+		Hostname:        "my-host",
+		ShieldsUp:       true,
+		ShareeNode:      true,
+		NoLogsNoSupport: true,
+		RemoteConfig:    true,
+		WireIngress:     true,
+		IngressEnabled:  true,
+		AllowsUpdate:    true,
+		Machine:         "x86_64",
+		GoArch:          "amd64",
+		GoArchVar:       "v3",
+		GoVersion:       "go1.27.3",
+		RoutableIPs:     []netip.Prefix{netip.MustParsePrefix("10.0.0.0/24")},
+		RequestTags:     []string{"tag:server"},
+		WoLMACs:         []string{"00:11:22:33:44:55"},
+		Services:        []tailcfg.Service{{Proto: tailcfg.PeerAPI4, Port: 4242}},
+		NetInfo: &tailcfg.NetInfo{
+			MappingVariesByDestIP: opt.Bool("true"),
+			WorkingIPv6:           opt.Bool("true"),
+			OSHasIPv6:             opt.Bool("true"),
+			WorkingUDP:            opt.Bool("true"),
+			WorkingICMPv4:         opt.Bool("true"),
+			HavePortMap:           true,
+			UPnP:                  opt.Bool("true"),
+			PMP:                   opt.Bool("true"),
+			PCP:                   opt.Bool("true"),
+			PreferredDERP:         2,
+			LinkType:              "wired",
+			DERPLatency:           map[string]float64{"1-v4": 0.05},
+			FirewallMode:          "nft-forced",
+		},
+		SSH_HostKeys:    []string{"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI..."},
+		Cloud:           "gcp",
+		Userspace:       opt.Bool("false"),
+		UserspaceRouter: opt.Bool("false"),
+		AppConnector:    opt.Bool("true"),
+		ServicesHash:    "hash123",
+		PeerRelay:       true,
+		ExitNodeID:      tailcfg.StableNodeID("123"),
+		Location:        loc,
+	}
+
+	sanitized := SanitizeHostinfo(full)
+	require.NotNil(t, sanitized)
+
+	// Operational fields MUST be retained:
+	assert.Equal(t, "my-host", sanitized.Hostname)
+	assert.Equal(t, "linux", sanitized.OS)
+	assert.Equal(t, []string{"tag:server"}, sanitized.RequestTags)
+	assert.Equal(t, []netip.Prefix{netip.MustParsePrefix("10.0.0.0/24")}, sanitized.RoutableIPs)
+	assert.Equal(t, []tailcfg.Service{{Proto: tailcfg.PeerAPI4, Port: 4242}}, sanitized.Services)
+	assert.Equal(t, []string{"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI..."}, sanitized.SSH_HostKeys)
+	assert.Equal(t, opt.Bool("true"), sanitized.AppConnector)
+	require.NotNil(t, sanitized.Location)
+	assert.Equal(t, loc, sanitized.Location)
+	require.NotNil(t, sanitized.NetInfo)
+	assert.Equal(t, tailcfg.DERPRegionID(2), sanitized.NetInfo.PreferredDERP)
+
+	// Fingerprinting and telemetry fields MUST be stripped:
+	assert.Empty(t, sanitized.IPNVersion)
+	assert.Empty(t, sanitized.FrontendLogID)
+	assert.Empty(t, sanitized.BackendLogID)
+	assert.Empty(t, sanitized.OSVersion)
+	assert.Empty(t, sanitized.Container)
+	assert.Empty(t, sanitized.Env)
+	assert.Empty(t, sanitized.Distro)
+	assert.Empty(t, sanitized.DistroVersion)
+	assert.Empty(t, sanitized.DistroCodeName)
+	assert.Empty(t, sanitized.App)
+	assert.Empty(t, sanitized.Desktop)
+	assert.Empty(t, sanitized.Package)
+	assert.Empty(t, sanitized.DeviceModel)
+	assert.Empty(t, sanitized.PushDeviceToken)
+	assert.False(t, sanitized.ShieldsUp)
+	assert.False(t, sanitized.ShareeNode)
+	assert.False(t, sanitized.NoLogsNoSupport)
+	assert.False(t, sanitized.RemoteConfig)
+	assert.False(t, sanitized.WireIngress)
+	assert.False(t, sanitized.IngressEnabled)
+	assert.False(t, sanitized.AllowsUpdate)
+	assert.Empty(t, sanitized.Machine)
+	assert.Empty(t, sanitized.GoArch)
+	assert.Empty(t, sanitized.GoArchVar)
+	assert.Empty(t, sanitized.GoVersion)
+	assert.Empty(t, sanitized.WoLMACs)
+	assert.Empty(t, sanitized.Cloud)
+	assert.Empty(t, sanitized.Userspace)
+	assert.Empty(t, sanitized.UserspaceRouter)
+	assert.Empty(t, sanitized.ServicesHash)
+	assert.False(t, sanitized.PeerRelay)
+	assert.Empty(t, sanitized.ExitNodeID)
+
+	// NetInfo diagnostics MUST be stripped:
+	assert.Empty(t, sanitized.NetInfo.MappingVariesByDestIP)
+	assert.Empty(t, sanitized.NetInfo.WorkingIPv6)
+	assert.Empty(t, sanitized.NetInfo.OSHasIPv6)
+	assert.Empty(t, sanitized.NetInfo.WorkingUDP)
+	assert.Empty(t, sanitized.NetInfo.WorkingICMPv4)
+	assert.False(t, sanitized.NetInfo.HavePortMap)
+	assert.Empty(t, sanitized.NetInfo.UPnP)
+	assert.Empty(t, sanitized.NetInfo.PMP)
+	assert.Empty(t, sanitized.NetInfo.PCP)
+	assert.Empty(t, sanitized.NetInfo.LinkType)
+	assert.Nil(t, sanitized.NetInfo.DERPLatency)
+	assert.Empty(t, sanitized.NetInfo.FirewallMode)
+
+	// Slices and pointers must be cloned independently:
+	sanitized.RequestTags[0] = "mutated"
+	assert.Equal(t, "tag:server", full.RequestTags[0])
+	sanitized.RoutableIPs[0] = netip.MustParsePrefix("192.168.1.0/24")
+	assert.Equal(t, netip.MustParsePrefix("10.0.0.0/24"), full.RoutableIPs[0])
+	sanitized.Location.City = "Bergen"
+	assert.Equal(t, "Oslo", full.Location.City)
+
+	// NetInfo nil handling
+	hiNoNetInfo := &tailcfg.Hostinfo{Hostname: "host2"}
+	assert.Nil(t, SanitizeHostinfo(hiNoNetInfo).NetInfo)
 }

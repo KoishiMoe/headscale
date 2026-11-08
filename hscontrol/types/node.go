@@ -764,6 +764,49 @@ func ValidateHostinfo(hi *tailcfg.Hostinfo) error {
 	return nil
 }
 
+// SanitizeHostinfo returns a copy of hi retaining only the fields required for
+// network operation, peer discovery, route advertising, NextDNS, and policy:
+//   - Hostname (node DNS name derivation & status)
+//   - OS (NextDNS metadata & peer status)
+//   - RequestTags (auth key tag requests)
+//   - RoutableIPs (subnet and exit routes)
+//   - Services (PeerAPI and local services)
+//   - SSH_HostKeys (Tailscale SSH)
+//   - Location (exit node location)
+//   - AppConnector (app connector service)
+//   - NetInfo.PreferredDERP (home DERP relay)
+//
+// All other device fingerprinting and telemetry fields (such as OSVersion,
+// Distro, DeviceModel, Machine, GoArch, GoVersion, LogIDs, and NetInfo flags)
+// are discarded to minimize stored client data.
+func SanitizeHostinfo(hi *tailcfg.Hostinfo) *tailcfg.Hostinfo {
+	if hi == nil {
+		return nil
+	}
+
+	clean := &tailcfg.Hostinfo{
+		Hostname:     hi.Hostname,
+		OS:           hi.OS,
+		RequestTags:  slices.Clone(hi.RequestTags),
+		RoutableIPs:  slices.Clone(hi.RoutableIPs),
+		Services:     slices.Clone(hi.Services),
+		SSH_HostKeys: slices.Clone(hi.SSH_HostKeys),
+		AppConnector: hi.AppConnector,
+	}
+
+	if hi.Location != nil {
+		clean.Location = hi.Location.Clone()
+	}
+
+	if hi.NetInfo != nil {
+		clean.NetInfo = &tailcfg.NetInfo{
+			PreferredDERP: hi.NetInfo.PreferredDERP,
+		}
+	}
+
+	return clean
+}
+
 // PeerChangeFromMapRequest takes a [tailcfg.MapRequest] and compares it to the node
 // to produce a [tailcfg.PeerChange] struct that can be used to updated the node and
 // inform peers about smaller changes to the node.

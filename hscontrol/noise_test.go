@@ -1326,6 +1326,71 @@ func TestPollNetMapHandler_AcceptsClientReport(t *testing.T) {
 		"an unchanged report must not be a change, got %s", c.Type())
 }
 
+func TestPollNetMapHandler_SanitizesClientReport(t *testing.T) {
+	t.Parallel()
+
+	app := createTestApp(t)
+	user := app.state.CreateUserForTest("sanitize-map-user")
+	node := putTestNodeInStore(t, app, user, "sanitize-map-node")
+
+	report := tailcfg.MapRequest{
+		Version:   tailcfg.CurrentCapabilityVersion,
+		NodeKey:   node.NodeKey,
+		DiscoKey:  node.DiscoKey,
+		OmitPeers: true,
+		Hostinfo: &tailcfg.Hostinfo{
+			Hostname:        "sanitize-map-node",
+			OS:              "linux",
+			OSVersion:       "6.12.0",
+			Distro:          "debian",
+			DeviceModel:     "server",
+			FrontendLogID:   "log123",
+			Machine:         "x86_64",
+			GoVersion:       "go1.27.3",
+			PushDeviceToken: "token123",
+			Services:        []tailcfg.Service{{Proto: tailcfg.PeerAPI4, Port: 4242}},
+			SSH_HostKeys:    []string{"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI..."},
+			NetInfo: &tailcfg.NetInfo{
+				PreferredDERP: 1,
+				LinkType:      "wifi",
+				FirewallMode:  "nft-forced",
+				DERPLatency:   map[string]float64{"1-v4": 0.01},
+			},
+			RoutableIPs: []netip.Prefix{netip.MustParsePrefix("10.0.0.0/24")},
+		},
+	}
+
+	ns := &noiseServer{headscale: app, machineKey: node.MachineKey}
+	rec := httptest.NewRecorder()
+	ns.PollNetMapHandler(rec, newMapRequest(t, report))
+	require.Equal(t, http.StatusOK, rec.Code, "body=%q", rec.Body.String())
+
+	stored, ok := app.state.GetNodeByID(node.ID)
+	require.True(t, ok)
+	hi := stored.Hostinfo().AsStruct()
+
+	// Retained operational fields
+	assert.Equal(t, "sanitize-map-node", hi.Hostname)
+	assert.Equal(t, "linux", hi.OS)
+	assert.Equal(t, []netip.Prefix{netip.MustParsePrefix("10.0.0.0/24")}, hi.RoutableIPs)
+	assert.Equal(t, []tailcfg.Service{{Proto: tailcfg.PeerAPI4, Port: 4242}}, hi.Services)
+	assert.Equal(t, []string{"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI..."}, hi.SSH_HostKeys)
+	require.NotNil(t, hi.NetInfo)
+	assert.Equal(t, tailcfg.DERPRegionID(1), hi.NetInfo.PreferredDERP)
+
+	// Sanitized / stripped fields
+	assert.Empty(t, hi.OSVersion)
+	assert.Empty(t, hi.Distro)
+	assert.Empty(t, hi.DeviceModel)
+	assert.Empty(t, hi.FrontendLogID)
+	assert.Empty(t, hi.Machine)
+	assert.Empty(t, hi.GoVersion)
+	assert.Empty(t, hi.PushDeviceToken)
+	assert.Empty(t, hi.NetInfo.LinkType)
+	assert.Empty(t, hi.NetInfo.FirewallMode)
+	assert.Nil(t, hi.NetInfo.DERPLatency)
+}
+
 func TestPollNetMapHandler_RejectsOversizedClientReport(t *testing.T) {
 	t.Parallel()
 
