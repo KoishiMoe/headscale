@@ -1,0 +1,13 @@
+#!/bin/sh
+# postrm script for headscale RPM package.
+
+set -e
+
+HEADSCALE_SERVICE="headscale.service"
+
+if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
+  systemctl daemon-reload >/dev/null 2>&1 || :
+  if [ "$1" -ge 1 ]; then
+    systemctl try-restart "$HEADSCALE_SERVICE" >/dev/null 2>&1 || :
+  fi
+fi

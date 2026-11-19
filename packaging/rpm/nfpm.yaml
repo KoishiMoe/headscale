@@ -1,0 +1,80 @@
+# yaml-language-server: $schema=https://nfpm.goreleaser.com/schema.json
+---
+name: headscale
+arch: ${GOARCH}
+platform: linux
+version: ${VERSION}
+version_schema: semver
+release: "1"
+vendor: headscale
+maintainer: Kristoffer Dalby <kristoffer@dalby.cc>
+homepage: https://github.com/juanfont/headscale
+license: BSD-3-Clause
+description: |-
+  Open source implementation of the Tailscale control server.
+  Headscale aims to implement a self-hosted, open source alternative to the
+  Tailscale control server. Headscale's goal is to provide self-hosters and
+  hobbyists with an open-source server they can use for their projects and
+  labs. It implements a narrow scope, a single Tailscale network (tailnet),
+  suitable for a personal use, or a small open-source organisation.
+
+contents:
+  - src: ./dist/bin/${GOARCH}/headscale
+    dst: /usr/bin/headscale
+    expand: true
+    file_info:
+      mode: 0755
+  - dst: /etc/headscale
+    type: dir
+    file_info:
+      mode: 0755
+  - src: ./config-example.yaml
+    dst: /etc/headscale/config.yaml
+    type: config|noreplace
+    file_info:
+      mode: 0644
+  - src: ./packaging/systemd/headscale.service
+    dst: /usr/lib/systemd/system/headscale.service
+    file_info:
+      mode: 0644
+  - dst: /var/lib/headscale
+    type: dir
+    file_info:
+      mode: 0750
+      owner: headscale
+      group: headscale
+  - dst: /usr/share/doc/headscale
+    type: dir
+    file_info:
+      mode: 0755
+  - dst: /usr/share/doc/headscale/examples
+    type: dir
+    file_info:
+      mode: 0755
+  - src: ./config-example.yaml
+    dst: /usr/share/doc/headscale/examples/config-example.yaml
+    file_info:
+      mode: 0644
+  - src: ./derp-example.yaml
+    dst: /usr/share/doc/headscale/examples/derp-example.yaml
+    file_info:
+      mode: 0644
+  - dst: /usr/share/licenses/headscale
+    type: dir
+    file_info:
+      mode: 0755
+  - src: ./LICENSE
+    dst: /usr/share/licenses/headscale/LICENSE
+    type: license
+    file_info:
+      mode: 0644
+
+scripts:
+  preinstall: ./packaging/rpm/preinst
+  postinstall: ./packaging/rpm/postinst
+  preremove: ./packaging/rpm/prerm
+  postremove: ./packaging/rpm/postrm
+
+rpm:
+  summary: Open source implementation of the Tailscale control server
+  compression: zstd

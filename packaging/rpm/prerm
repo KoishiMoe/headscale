@@ -1,0 +1,10 @@
+#!/bin/sh
+# prerm script for headscale RPM package.
+
+set -e
+
+HEADSCALE_SERVICE="headscale.service"
+
+if [ "$1" -eq 0 ] && command -v systemctl >/dev/null 2>&1; then
+  systemctl --no-reload disable --now "$HEADSCALE_SERVICE" >/dev/null 2>&1 || :
+fi
