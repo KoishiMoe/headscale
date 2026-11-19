@@ -1,0 +1,131 @@
+---
+name: Release RPM Package
+
+on:
+  push:
+    tags:
+      - "*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build (e.g. v0.29.3)"
+        required: false
+        type: string
+
+jobs:
+  release-rpm:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
+
+      - name: Determine version
+        id: vars
+        run: |
+          if [ -n "${{ inputs.tag }}" ]; then
+            TAG="${{ inputs.tag }}"
+          elif [ "${{ github.ref_type }}" = "tag" ]; then
+            TAG="${{ github.ref_name }}"
+          else
+            TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          fi
+
+          PKGVER="${TAG#v}"
+          COMMIT=$(git rev-parse HEAD)
+          BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
+
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "pkgver=${PKGVER}" >> "$GITHUB_OUTPUT"
+          echo "commit=${COMMIT}" >> "$GITHUB_OUTPUT"
+          echo "build_time=${BUILD_TIME}" >> "$GITHUB_OUTPUT"
+          echo "source_date_epoch=${SOURCE_DATE_EPOCH}" >> "$GITHUB_OUTPUT"
+          echo "Building headscale for tag: ${TAG} (version: ${PKGVER}, commit: ${COMMIT}, build time: ${BUILD_TIME})"
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Build binaries and RPM packages
+        env:
+          CGO_ENABLED: "0"
+          GOOS: linux
+          VERSION: ${{ steps.vars.outputs.pkgver }}
+          SOURCE_DATE_EPOCH: ${{ steps.vars.outputs.source_date_epoch }}
+        run: |
+          mkdir -p dist/bin
+
+          LDFLAGS="-s -w"
+          LDFLAGS+=" -X github.com/juanfont/headscale/hscontrol/types.Version=${{ steps.vars.outputs.tag }}"
+          LDFLAGS+=" -X github.com/juanfont/headscale/hscontrol/types.Commit=${{ steps.vars.outputs.commit }}"
+          LDFLAGS+=" -X github.com/juanfont/headscale/hscontrol/types.BuildTime=${{ steps.vars.outputs.build_time }}"
+
+          (cd /tmp && go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.49.0)
+          NFPM_BIN="$(go env GOPATH)/bin/nfpm"
+
+          for arch in amd64 arm64; do
+            GOARCH="${arch}" go build -v -trimpath -mod=readonly -tags="ts2019" -ldflags "${LDFLAGS}" -o "dist/bin/${arch}/headscale" ./cmd/headscale
+            GOARCH="${arch}" "${NFPM_BIN}" package --config packaging/rpm/nfpm.yaml --packager rpm --target dist/
+          done
+
+          rm -rf dist/bin
+
+      - name: Verify RPM packages
+        run: |
+          docker run --rm \
+            -v "${PWD}:/workspace" \
+            -w /workspace \
+            rockylinux:9 bash -c '
+              set -euo pipefail
+
+              for pkg in dist/*.rpm; do
+                echo "=== Inspecting ${pkg} ==="
+                rpm -qip "${pkg}"
+                rpm -qlvp "${pkg}"
+                rpm -q --scripts -p "${pkg}"
+              done
+
+              echo "=== Smoke testing x86_64 RPM install/uninstall ==="
+              rpm -Uvh dist/*.x86_64.rpm
+              headscale version
+              id headscale
+              test "$(stat -c "%a %U:%G" /var/lib/headscale)" = "750 headscale:headscale"
+              test -f /etc/headscale/config.yaml
+              test -f /usr/lib/systemd/system/headscale.service
+              test -f /usr/share/licenses/headscale/LICENSE
+              rpm -V headscale
+              rpm -e headscale
+            '
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          for pkg in *.rpm; do
+            [ -f "$pkg" ] || continue
+            sha256sum "$pkg" > "${pkg}.sha256"
+          done
+          ls -la
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: headscale-rpm-${{ steps.vars.outputs.pkgver }}
+          path: |
+            dist/*.rpm
+            dist/*.rpm.sha256
+          if-no-files-found: error
+
+      - name: Release
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64
+        with:
+          files: |
+            dist/*.rpm
+            dist/*.rpm.sha256
+          tag_name: ${{ steps.vars.outputs.tag }}

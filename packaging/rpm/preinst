@@ -1,0 +1,32 @@
+#!/bin/sh
+# preinst script for headscale RPM package.
+
+set -e
+
+HEADSCALE_USER="headscale"
+HEADSCALE_GROUP="headscale"
+HEADSCALE_HOME_DIR="/var/lib/headscale"
+HEADSCALE_SHELL="/sbin/nologin"
+
+if [ -x /usr/sbin/nologin ]; then
+  HEADSCALE_SHELL="/usr/sbin/nologin"
+elif [ -x /usr/bin/nologin ]; then
+  HEADSCALE_SHELL="/usr/bin/nologin"
+fi
+
+if command -v groupadd >/dev/null 2>&1 && command -v useradd >/dev/null 2>&1; then
+  if ! getent group "$HEADSCALE_GROUP" >/dev/null 2>&1; then
+    groupadd --system "$HEADSCALE_GROUP"
+  fi
+
+  if ! getent passwd "$HEADSCALE_USER" >/dev/null 2>&1; then
+    useradd --system --gid "$HEADSCALE_GROUP" --home-dir "$HEADSCALE_HOME_DIR" \
+      --no-create-home --shell "$HEADSCALE_SHELL" \
+      --comment "headscale default user" "$HEADSCALE_USER"
+  fi
+elif command -v systemd-sysusers >/dev/null 2>&1; then
+  if ! getent group "$HEADSCALE_GROUP" >/dev/null 2>&1 || ! getent passwd "$HEADSCALE_USER" >/dev/null 2>&1; then
+    printf 'u %s - "headscale default user" %s %s\n' \
+      "$HEADSCALE_USER" "$HEADSCALE_HOME_DIR" "$HEADSCALE_SHELL" | systemd-sysusers -
+  fi
+fi
