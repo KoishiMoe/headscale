@@ -59,6 +59,8 @@ jobs:
           GOOS: linux
           VERSION: ${{ steps.vars.outputs.pkgver }}
           SOURCE_DATE_EPOCH: ${{ steps.vars.outputs.source_date_epoch }}
+          NFPM_VERSION: "2.49.0"
+          NFPM_SHA256: "2afaa5ffb5e3493402e31e7c67a5a1fb42133e3f66fc315ca0051934125561c7"
         run: |
           mkdir -p dist/bin
 
@@ -67,15 +69,19 @@ jobs:
           LDFLAGS+=" -X github.com/juanfont/headscale/hscontrol/types.Commit=${{ steps.vars.outputs.commit }}"
           LDFLAGS+=" -X github.com/juanfont/headscale/hscontrol/types.BuildTime=${{ steps.vars.outputs.build_time }}"
 
-          (cd /tmp && go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.49.0)
-          NFPM_BIN="$(go env GOPATH)/bin/nfpm"
+          NFPM_DIR="$(mktemp -d)"
+          curl -fsSL -o "${NFPM_DIR}/nfpm.tar.gz" \
+            "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz"
+          echo "${NFPM_SHA256}  ${NFPM_DIR}/nfpm.tar.gz" | sha256sum -c -
+          tar -xzf "${NFPM_DIR}/nfpm.tar.gz" -C "${NFPM_DIR}" nfpm
+          NFPM_BIN="${NFPM_DIR}/nfpm"
 
           for arch in amd64 arm64; do
             GOARCH="${arch}" go build -v -trimpath -mod=readonly -tags="ts2019" -ldflags "${LDFLAGS}" -o "dist/bin/${arch}/headscale" ./cmd/headscale
             GOARCH="${arch}" "${NFPM_BIN}" package --config packaging/rpm/nfpm.yaml --packager rpm --target dist/
           done
 
-          rm -rf dist/bin
+          rm -rf "${NFPM_DIR}" dist/bin
 
       - name: Verify RPM packages
         run: |
